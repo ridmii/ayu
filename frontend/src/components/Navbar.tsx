@@ -1,52 +1,32 @@
-import { NavLink } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 
-const Navbar = () => {
+interface Props {
+  setIsAuthenticated: (value: boolean) => void;
+}
+
+const Navbar = ({ setIsAuthenticated }: Props) => {
+  const navigate = useNavigate();
+
   const handleLogout = () => {
     localStorage.removeItem('token');
-    window.location.href = '/login';
+    localStorage.removeItem('refreshToken');
+    setIsAuthenticated(false);
+    navigate('/login');
   };
 
   return (
-    <nav className="bg-green-600 text-white p-4">
+    <nav className="bg-green-500 p-4">
       <div className="container mx-auto flex justify-between items-center">
-        <h1 className="text-xl font-bold">Ayurvedic System</h1>
         <div className="space-x-4">
-          <NavLink
-            to="/"
-            className={({ isActive }) =>
-              isActive ? 'underline font-semibold' : 'hover:underline'
-            }
-          >
-            Dashboard
-          </NavLink>
-          <NavLink
-            to="/inventory"
-            className={({ isActive }) =>
-              isActive ? 'underline font-semibold' : 'hover:underline'
-            }
-          >
-            Inventory
-          </NavLink>
-          <NavLink
-            to="/orders"
-            className={({ isActive }) =>
-              isActive ? 'underline font-semibold' : 'hover:underline'
-            }
-          >
-            Orders
-          </NavLink>
-          <NavLink
-            to="/analytics"
-            className={({ isActive }) =>
-              isActive ? 'underline font-semibold' : 'hover:underline'
-            }
-          >
-            Analytics
-          </NavLink>
-          <button onClick={handleLogout} className="hover:underline">
-            Logout
-          </button>
+          <Link to="/" className="text-white hover:text-gray-200">Dashboard</Link>
+          <Link to="/inventory" className="text-white hover:text-gray-200">Inventory</Link>
+          <Link to="/orders" className="text-white hover:text-gray-200">Orders</Link>
+          <Link to="/packing" className="text-white hover:text-gray-200">Packing</Link>
+          <Link to="/analytics" className="text-white hover:text-gray-200">Analytics</Link>
         </div>
+        <button onClick={handleLogout} className="text-white hover:text-gray-200">
+          Logout
+        </button>
       </div>
     </nav>
   );

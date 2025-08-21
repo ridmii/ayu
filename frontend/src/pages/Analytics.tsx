@@ -1,53 +1,60 @@
 import { useEffect, useState } from 'react';
 import api from '../api';
+import { AxiosError } from 'axios';
 
-interface Invoice {
+interface Order {
   _id: string;
-  order: { customer: { name: string } };
-  total: number;
-  paymentStatus: string;
+  customer: { name: string };
+  totalAmount: number;
+  pendingPayments: number;
+  status: string;
 }
 
 const Analytics = () => {
-  const [invoices, setInvoices] = useState<Invoice[]>([]);
+  const [orders, setOrders] = useState<Order[]>([]);
 
   useEffect(() => {
-    const fetchInvoices = async () => {
+    const fetchOrders = async () => {
       try {
-        const res = await api.get('/api/invoices/admin');
-        console.log('Invoices:', res.data); // Debug
-        setInvoices(res.data);
+        const res = await api.get('/api/orders');
+        setOrders(res.data);
       } catch (error) {
-        console.error('Failed to fetch invoices:', error);
+        const axiosError = error as AxiosError;
+        console.error('Failed to fetch orders:', {
+          message: axiosError.message,
+          response: axiosError.response?.data,
+          status: axiosError.response?.status,
+        });
+        alert('Failed to fetch orders. Please check authentication.');
       }
     };
-    fetchInvoices();
+    fetchOrders();
   }, []);
 
   return (
     <div className="min-h-screen bg-gray-100 p-6">
-      <h1 className="text-3xl font-bold mb-6">Analytics</h1>
+      <h1 className="text-3xl font-bold mb-6 text-green-700">Analytics</h1>
       <div className="bg-white p-6 rounded-lg shadow">
-        <h2 className="text-xl font-semibold mb-4">Invoices</h2>
-        {invoices.length === 0 ? (
-          <p>No invoices found.</p>
+        <h2 className="text-xl font-semibold mb-4 text-green-700">Order Summary</h2>
+        {orders.length === 0 ? (
+          <p>No orders found.</p>
         ) : (
           <table className="w-full border-collapse">
             <thead>
               <tr className="bg-gray-200">
-                <th className="p-2 text-left">Invoice ID</th>
                 <th className="p-2 text-left">Customer</th>
-                <th className="p-2 text-left">Total</th>
-                <th className="p-2 text-left">Payment Status</th>
+                <th className="p-2 text-left">Total Amount</th>
+                <th className="p-2 text-left">Pending Payments</th>
+                <th className="p-2 text-left">Status</th>
               </tr>
             </thead>
             <tbody>
-              {invoices.map((invoice) => (
-                <tr key={invoice._id} className="border-b">
-                  <td className="p-2">{invoice._id}</td>
-                  <td className="p-2">{invoice.order.customer.name}</td>
-                  <td className="p-2">${invoice.total}</td>
-                  <td className="p-2">{invoice.paymentStatus}</td>
+              {orders.map((order) => (
+                <tr key={order._id} className="border-b">
+                  <td className="p-2">{order.customer.name}</td>
+                  <td className="p-2">${order.totalAmount}</td>
+                  <td className="p-2">${order.pendingPayments}</td>
+                  <td className="p-2">{order.status}</td>
                 </tr>
               ))}
             </tbody>

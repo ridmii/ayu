@@ -1,53 +1,75 @@
-import express from 'express';
+import { Router } from 'express';
 import Order from '../models/Order';
-import Product from '../models/Product';
-import RawMaterial from '../models/RawMaterial';
+import Customer from '../models/Customer';
 import { requireAdmin } from '../middleware/auth';
+import { v4 as uuidv4 } from 'uuid';
+import { io } from '../index';
 
-const router = express.Router();
+const router = Router();
 
-// Create order
-router.post('/', requireAdmin, async (req, res) => {
-  const { customerId, items, personalizedItems } = req.body;
+router.get('/', async (req, res) => {
   try {
+    const orders = await Order.find().populate('customer');
+    res.json(orders);
+  } catch (error: any) {
+    console.error('Failed to fetch orders:', error.message);
+    res.status(500).json({ error: 'Failed to fetch orders' });
+  }
+});
+
+router.post('/', requireAdmin, async (req, res) => {
+  const { customerId, items, personalized, paymentMethod } = req.body;
+  try {
+    const customer = await Customer.findById(customerId);
+    if (!customer) {
+      return res.status(404).json({ error: 'Customer not found' });
+    }
+
     let totalAmount = 0;
-
-    // Calculate total for standard items
     for (const item of items) {
-      const product = await Product.findById(item.productId);
-      if (!product) return res.status(404).json({ error: `Product ${item.productId} not found` });
-      totalAmount += product.price * item.quantity;
-      // Update product quantity
-      product.quantity -= item.quantity;
-      await product.save();
-    }
-
-    // Calculate total for personalized items and update raw materials
-    for (const item of personalizedItems) {
-      totalAmount += item.price * item.quantity;
-      for (const raw of item.rawMaterials) {
-        const material = await RawMaterial.findById(raw.materialId);
-        if (!material) return res.status(404).json({ error: `Raw material ${raw.materialId} not found` });
-        material.processedQuantity -= raw.quantityUsed;
-        await material.save();
+      if (!item.productName || !item.quantity || !item.unitPrice) {
+        return res.status(400).json({ error: 'All item fields are required' });
       }
+      totalAmount += item.quantity * item.unitPrice;
     }
 
-    const order = new Order({ customerId, items, personalizedItems, totalAmount });
+    const order = new Order({
+      customer: customerId,
+      items,
+      totalAmount,
+      pendingPayments: customer.pendingPayments,
+      barcode: uuidv4(),
+      status: 'Pending',
+      personalized,
+      paymentMethod,
+    });
+
     await order.save();
-    res.status(201).json(order);
-  } catch (error) {
+    const populatedOrder = await Order.findById(order._id).populate('customer');
+    io.emit('orderCreated', populatedOrder);
+    res.status(201).json(populatedOrder);
+  } catch (error: any) {
+    console.error('Failed to create order:', error.message);
     res.status(500).json({ error: 'Failed to create order' });
   }
 });
 
-// Get all orders
-router.get('/', requireAdmin, async (req, res) => {
+router.put('/:id/status', async (req, res) => {
+  const { status, packer } = req.body;
   try {
-    const orders = await Order.find().populate('customerId items.productId');
-    res.json(orders);
-  } catch (error) {
-    res.status(500).json({ error: 'Failed to fetch orders' });
+    const order = await Order.findById(req.params.id);
+    if (!order) {
+      return res.status(404).json({ error: 'Order not found' });
+    }
+    order.status = status;
+    if (packer) order.packer = packer;
+    await order.save();
+    const populatedOrder = await Order.findById(order._id).populate('customer');
+    io.emit('orderUpdated', populatedOrder);
+    res.json(populatedOrder);
+  } catch (error: any) {
+    console.error('Failed to update order:', error.message);
+    res.status(500).json({ error: 'Failed to update order' });
   }
 });
 

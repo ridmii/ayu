@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useState, useEffect } from 'react';
 import api from '../api';
 
 interface RawMaterial {
@@ -33,11 +33,9 @@ const Inventory = () => {
     const fetchRawMaterials = async () => {
       try {
         const res = await api.get('/api/raw-materials');
-        console.log('Raw materials:', res.data); // Debug
         setRawMaterials(res.data);
-      } catch (error) {
-        console.error('Failed to fetch raw materials:', error);
-        alert('Failed to fetch raw materials. Please check authentication.');
+      } catch (error: any) {
+        console.error('Failed to fetch raw materials:', error.message);
       }
     };
     fetchRawMaterials();
@@ -54,9 +52,8 @@ const Inventory = () => {
       });
       setRawMaterials([...rawMaterials, res.data]);
       setAddFormData({ name: '', initialQuantity: 0, unit: '', lowStockThreshold: 0 });
-    } catch (error) {
-      console.error('Failed to add raw material:', error);
-      alert('Failed to add raw material. Please check authentication.');
+    } catch (error: any) {
+      console.error('Failed to add raw material:', error.message);
     }
   };
 
@@ -69,9 +66,8 @@ const Inventory = () => {
       });
       setRawMaterials(rawMaterials.map((rm) => (rm._id === res.data._id ? res.data : rm)));
       setProcessData({ materialId: '', processType: '', processedQuantity: 0 });
-    } catch (error) {
-      console.error('Failed to process raw material:', error);
-      alert('Failed to process raw material. Please check authentication.');
+    } catch (error: any) {
+      console.error('Failed to process raw material:', error.message);
     }
   };
 
@@ -86,9 +82,8 @@ const Inventory = () => {
       });
       setRawMaterials(rawMaterials.map((rm) => (rm._id === res.data._id ? res.data : rm)));
       setEditData(null);
-    } catch (error) {
-      console.error('Failed to edit raw material:', error);
-      alert('Failed to edit raw material. Please check authentication.');
+    } catch (error: any) {
+      console.error('Failed to edit raw material:', error.message);
     }
   };
 
@@ -96,9 +91,8 @@ const Inventory = () => {
     try {
       await api.delete(`/api/raw-materials/${id}`);
       setRawMaterials(rawMaterials.filter((rm) => rm._id !== id));
-    } catch (error) {
-      console.error('Failed to delete raw material:', error);
-      alert('Failed to delete raw material. Please check authentication.');
+    } catch (error: any) {
+      console.error('Failed to delete raw material:', error.message);
     }
   };
 
@@ -112,12 +106,12 @@ const Inventory = () => {
 
   return (
     <div className="min-h-screen bg-gray-100 p-6">
-      <h1 className="text-3xl font-bold mb-6">Inventory Management</h1>
+      <h1 className="text-3xl font-bold mb-6 text-green-700">Inventory Management</h1>
       <div className="bg-white p-6 rounded-lg shadow mb-6">
-        <h2 className="text-xl font-semibold mb-4">Add Raw Material</h2>
+        <h2 className="text-xl font-semibold mb-4 text-green-700">Add Raw Material</h2>
         <form onSubmit={handleAddSubmit} className="space-y-4">
           <div>
-            <label className="block text-sm font-medium">Name</label>
+            <label className="block text-sm font-medium text-gray-700">Name</label>
             <input
               type="text"
               value={addFormData.name}
@@ -126,7 +120,7 @@ const Inventory = () => {
             />
           </div>
           <div>
-            <label className="block text-sm font-medium">Initial Quantity</label>
+            <label className="block text-sm font-medium text-gray-700">Initial Quantity</label>
             <input
               type="number"
               value={addFormData.initialQuantity}
@@ -135,7 +129,7 @@ const Inventory = () => {
             />
           </div>
           <div>
-            <label className="block text-sm font-medium">Unit</label>
+            <label className="block text-sm font-medium text-gray-700">Unit</label>
             <input
               type="text"
               value={addFormData.unit}
@@ -144,7 +138,7 @@ const Inventory = () => {
             />
           </div>
           <div>
-            <label className="block text-sm font-medium">Reorder Threshold</label>
+            <label className="block text-sm font-medium text-gray-700">Reorder Threshold</label>
             <input
               type="number"
               value={addFormData.lowStockThreshold}
@@ -152,16 +146,16 @@ const Inventory = () => {
               className="w-full p-2 border rounded"
             />
           </div>
-          <button type="submit" className="bg-blue-500 text-white p-2 rounded hover:bg-blue-600">
+          <button type="submit" className="bg-green-500 text-white p-2 rounded hover:bg-green-600">
             Add Raw Material
           </button>
         </form>
       </div>
       <div className="bg-white p-6 rounded-lg shadow mb-6">
-        <h2 className="text-xl font-semibold mb-4">Process Raw Material</h2>
+        <h2 className="text-xl font-semibold mb-4 text-green-700">Process Raw Material</h2>
         <form onSubmit={handleProcessSubmit} className="space-y-4">
           <div>
-            <label className="block text-sm font-medium">Select Raw Material</label>
+            <label className="block text-sm font-medium text-gray-700">Select Raw Material</label>
             <select
               value={processData.materialId}
               onChange={(e) => setProcessData({ ...processData, materialId: e.target.value })}
@@ -176,7 +170,7 @@ const Inventory = () => {
             </select>
           </div>
           <div>
-            <label className="block text-sm font-medium">Process Type</label>
+            <label className="block text-sm font-medium text-gray-700">Process Type</label>
             <select
               value={processData.processType}
               onChange={(e) => setProcessData({ ...processData, processType: e.target.value })}
@@ -191,7 +185,7 @@ const Inventory = () => {
             </select>
           </div>
           <div>
-            <label className="block text-sm font-medium">After Process Amount</label>
+            <label className="block text-sm font-medium text-gray-700">After Process Amount</label>
             <input
               type="number"
               value={processData.processedQuantity}
@@ -205,7 +199,7 @@ const Inventory = () => {
         </form>
       </div>
       <div className="bg-white p-6 rounded-lg shadow">
-        <h2 className="text-xl font-semibold mb-4">Raw Materials</h2>
+        <h2 className="text-xl font-semibold mb-4 text-green-700">Raw Materials</h2>
         {rawMaterials.length === 0 ? (
           <p>No raw materials found.</p>
         ) : (

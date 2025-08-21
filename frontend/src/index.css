@@ -1,3 +1,8 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/* Custom green theme */
+.text-green-700 { color: #047857; }
+.bg-green-500 { background-color: #10B981; }
+.hover\:bg-green-600:hover { background-color: #059669; }
