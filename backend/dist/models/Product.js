@@ -36,8 +36,10 @@ Object.defineProperty(exports, "__esModule", { value: true });
 const mongoose_1 = __importStar(require("mongoose"));
 const ProductSchema = new mongoose_1.Schema({
     name: { type: String, required: true },
-    quantity: { type: Number, required: true },
-    price: { type: Number, required: true },
-    rawMaterials: [{ materialId: { type: mongoose_1.Schema.Types.ObjectId, ref: 'RawMaterial' }, quantityUsed: Number }],
+    productId: { type: String, required: true, unique: true }, // Add: Matches frontend
+    unitPrice: { type: Number, required: true }, // Renamed from 'price'
+    barcode: { type: String, required: true, unique: true }, // Add: For scanning
+    quantity: { type: Number, default: 0 }, // Optional: For stock tracking later
+    rawMaterials: [{ materialId: { type: mongoose_1.Schema.Types.ObjectId, ref: 'RawMaterial' }, quantityUsed: Number }], // Keep for future
 });
 exports.default = mongoose_1.default.model('Product', ProductSchema);

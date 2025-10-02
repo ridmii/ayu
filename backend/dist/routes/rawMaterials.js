@@ -12,53 +12,123 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-const express_1 = __importDefault(require("express"));
+const express_1 = require("express");
+const mongoose_1 = __importDefault(require("mongoose"));
 const RawMaterial_1 = __importDefault(require("../models/RawMaterial"));
-const auth_1 = require("../middleware/auth");
-const router = express_1.default.Router();
-// Add raw material
-router.post('/', auth_1.requireAdmin, (req, res) => __awaiter(void 0, void 0, void 0, function* () {
-    const { name, initialQuantity, unit, lowStockThreshold } = req.body;
+const router = (0, express_1.Router)();
+router.get('/', (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     try {
-        const material = new RawMaterial_1.default({ name, initialQuantity, processedQuantity: initialQuantity, unit, lowStockThreshold });
-        yield material.save();
-        res.status(201).json(material);
+        if (mongoose_1.default.connection.readyState !== 1) {
+            return res.status(500).json({ error: 'MongoDB not connected' });
+        }
+        const rawMaterials = yield RawMaterial_1.default.find();
+        res.json(rawMaterials);
     }
     catch (error) {
+        console.error('Failed to fetch raw materials:', {
+            message: error.message,
+            stack: error.stack,
+        });
+        res.status(500).json({ error: 'Failed to fetch raw materials' });
+    }
+}));
+router.post('/', (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    const { name, initialQuantity, unit, lowStockThreshold } = req.body;
+    try {
+        if (!name || !initialQuantity || !unit || !lowStockThreshold) {
+            return res.status(400).json({ error: 'All fields are required' });
+        }
+        if (mongoose_1.default.connection.readyState !== 1) {
+            return res.status(500).json({ error: 'MongoDB not connected' });
+        }
+        const rawMaterial = new RawMaterial_1.default({
+            name,
+            initialQuantity,
+            processedQuantity: initialQuantity,
+            wastage: 0,
+            usableQuantity: initialQuantity,
+            unit,
+            lowStockThreshold,
+        });
+        yield rawMaterial.save();
+        res.status(201).json(rawMaterial);
+    }
+    catch (error) {
+        console.error('Failed to add raw material:', {
+            message: error.message,
+            stack: error.stack,
+        });
         res.status(500).json({ error: 'Failed to add raw material' });
     }
 }));
-// Process raw material (wash/dry)
-router.post('/process', auth_1.requireAdmin, (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+router.post('/process', (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     const { materialId, processedQuantity } = req.body;
     try {
-        const material = yield RawMaterial_1.default.findById(materialId);
-        if (!material)
-            return res.status(404).json({ error: 'Material not found' });
-        material.processedQuantity = processedQuantity;
-        material.wastage = material.initialQuantity - processedQuantity;
-        material.updatedAt = new Date();
-        yield material.save();
-        // Comment out for demo (no WhatsApp notifications)
-        // if (material.processedQuantity < material.lowStockThreshold) {
-        //   await sendWhatsApp(
-        //     `Low stock alert: ${material.name} is below threshold (${material.processedQuantity} ${material.unit} remaining)`
-        //   );
-        // }
-        res.json(material);
+        if (!materialId || processedQuantity == null) {
+            return res.status(400).json({ error: 'Material ID and processed quantity are required' });
+        }
+        if (mongoose_1.default.connection.readyState !== 1) {
+            return res.status(500).json({ error: 'MongoDB not connected' });
+        }
+        const rawMaterial = yield RawMaterial_1.default.findById(materialId);
+        if (!rawMaterial) {
+            return res.status(404).json({ error: 'Raw material not found' });
+        }
+        if (processedQuantity > rawMaterial.initialQuantity) {
+            return res.status(400).json({ error: 'Processed quantity exceeds initial quantity' });
+        }
+        rawMaterial.processedQuantity = processedQuantity;
+        rawMaterial.wastage = rawMaterial.initialQuantity - processedQuantity;
+        rawMaterial.usableQuantity = processedQuantity;
+        yield rawMaterial.save();
+        res.json(rawMaterial);
     }
     catch (error) {
-        res.status(500).json({ error: 'Failed to process material' });
+        console.error('Failed to process raw material:', {
+            message: error.message,
+            stack: error.stack,
+            materialId,
+            processedQuantity,
+        });
+        res.status(500).json({ error: 'Failed to process raw material' });
     }
 }));
-// Get all raw materials
-router.get('/', auth_1.requireAdmin, (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+router.put('/:id', (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     try {
-        const materials = yield RawMaterial_1.default.find();
-        res.json(materials);
+        if (mongoose_1.default.connection.readyState !== 1) {
+            return res.status(500).json({ error: 'MongoDB not connected' });
+        }
+        const rawMaterial = yield RawMaterial_1.default.findByIdAndUpdate(req.params.id, req.body, { new: true });
+        if (!rawMaterial) {
+            return res.status(404).json({ error: 'Raw material not found' });
+        }
+        res.json(rawMaterial);
     }
     catch (error) {
-        res.status(500).json({ error: 'Failed to fetch raw materials' });
+        console.error('Failed to update raw material:', {
+            message: error.message,
+            stack: error.stack,
+        });
+        res.status(500).json({ error: 'Failed to update raw material' });
+    }
+}));
+router.delete('/:id', (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    try {
+        if (mongoose_1.default.connection.readyState !== 1) {
+            return res.status(500).json({ error: 'MongoDB not connected' });
+        }
+        const rawMaterial = yield RawMaterial_1.default.findByIdAndDelete(req.params.id);
+        if (!rawMaterial) {
+            return res.status(404).json({ error: 'Raw material not found' });
+        }
+        res.json({ message: 'Raw material deleted' });
+    }
+    catch (error) {
+        console.error('Failed to delete raw material:', {
+            message: error.message,
+            stack: error.stack,
+        });
+        res.status(500).json({ error: 'Failed to delete raw material' });
     }
 }));
 exports.default = router;
