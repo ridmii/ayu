@@ -15,6 +15,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.uploadFile = void 0;
 const uuid_1 = require("uuid");
 const path_1 = __importDefault(require("path"));
+// Accept a loose req type because express-fileupload adds a `files` property
 const uploadFile = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     try {
         if (!req.files || !req.files.file) {

@@ -12,20 +12,20 @@ const router = express.Router();
 router.post('/generate', requireAdmin, async (req, res) => {
   const { orderId, paymentMethod } = req.body;
   try {
-    const order = await Order.findById(orderId).populate('customerId items.productId');
+    const order = await Order.findById(orderId).populate('customer');
     if (!order) return res.status(404).json({ error: 'Order not found' });
 
-    const customer = await Customer.findById(order.customerId);
+    const customer = order.customer as any;
     if (!customer) return res.status(404).json({ error: 'Customer not found' });
 
     const totalAmount = order.totalAmount + (customer.pendingPayments || 0);
     const invoice = new Invoice({
       orderId,
-      customerId: order.customerId,
+      customerId: order.customer,
       totalAmount,
       pendingAmount: totalAmount,
       paymentMethod,
-      isPersonalized: order.personalizedItems.length > 0,
+      isPersonalized: !!order.personalized,
     });
     await invoice.save();
 

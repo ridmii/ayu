@@ -2,8 +2,8 @@ import { Request, Response } from 'express';
    import { v4 as uuidv4 } from 'uuid';
    import fs from 'fs';
    import path from 'path';
-
-   export const uploadFile = async (req: Request, res: Response) => {
+   // Accept a loose req type because express-fileupload adds a `files` property
+   export const uploadFile = async (req: any, res: Response) => {
      try {
        if (!req.files || !req.files.file) {
          return res.status(400).json({ error: 'No file uploaded' });

@@ -27,6 +27,9 @@ app.use(cors({
 }));
 app.use(express.json());
 
+// expose io via app so routes can emit without circular imports
+app.set('io', io);
+
 app.use('/api/raw-materials', rawMaterialsRoutes);
 app.use('/api/orders', ordersRoutes);
 app.use('/api/customers', customersRoutes);
@@ -42,3 +45,10 @@ mongoose
 server.listen(5000, () => {
   console.log('Server running on port 5000');
 });
+
+try {
+  const packersRoutes = require('./routes/packers').default;  // Fallback to CommonJS if ESM issues
+  app.use('/api/packers', packersRoutes);
+} catch (err) {
+  console.error('Failed to import packersRoutes:', err);
+}

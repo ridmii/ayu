@@ -33,12 +33,15 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
+// models/PackingAssignment.ts (updated)
 const mongoose_1 = __importStar(require("mongoose"));
 const PackingAssignmentSchema = new mongoose_1.Schema({
     orderId: { type: mongoose_1.Schema.Types.ObjectId, ref: 'Order', required: true },
-    employeeId: { type: mongoose_1.Schema.Types.ObjectId, ref: 'User', required: true },
+    packerId: { type: mongoose_1.Schema.Types.ObjectId, ref: 'Packer', required: true },
     status: { type: String, enum: ['assigned', 'packed'], default: 'assigned' },
-    qrCode: { type: String, required: true },
+    token: { type: String, required: true, unique: true },
+    qrCode: { type: String, required: true }, // Base64 encoded QR code
+    expiry: { type: Date, required: true },
     updatedAt: { type: Date, default: Date.now },
 });
 exports.default = mongoose_1.default.model('PackingAssignment', PackingAssignmentSchema);
