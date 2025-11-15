@@ -35,10 +35,13 @@ import {
   CreditCard,
   Truck,
   CheckSquare,
-  PieChart
+  PieChart,
+  Lock,
+  Menu,
+  Layers
 } from 'lucide-react';
 
-// Interfaces
+// Interfaces - UPDATED to include productId in OrderItem
 interface Customer {
   _id: string;
   name: string;
@@ -49,9 +52,11 @@ interface Customer {
 }
 
 interface OrderItem {
+  productId: string; // Required for stock reduction
   productName: string;
   quantity: number;
   unitPrice: number;
+  unit?: string; // Added for product unit/size
 }
 
 interface Order {
@@ -74,13 +79,18 @@ interface Product {
   unitPrice: number;
   barcode: string;
   quantity?: number;
-  rawMaterials?: any[];
+  lowStockThreshold?: number;
+  unit?: string; // Product size/unit (e.g., "50g", "250g", "1kg")
+  rawMaterials?: any[];  
 }
 
+// UPDATED: OrderFormItem now includes productId and unit
 interface OrderFormItem {
+  productId: string;
   productName: string;
   quantity: string;
   unitPrice: string;
+  unit?: string;
 }
 
 interface CustomerFormData {
@@ -134,6 +144,10 @@ const colors = {
   }
 };
 
+// Security credentials
+const PERSONALIZED_ORDERS_PASSWORD = "odsee12";
+const DELETE_ORDER_PIN = "0713";
+
 const Orders = ({ socket }: { socket: Socket }) => {
   const [orders, setOrders] = useState<Order[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);
@@ -148,6 +162,7 @@ const Orders = ({ socket }: { socket: Socket }) => {
   const [lastCreatedOrder, setLastCreatedOrder] = useState<Order | null>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const [products, setProducts] = useState<Product[]>([]);
+  const [productsFlat, setProductsFlat] = useState<any[]>([]); // flattened product+variant for search
   
   // Enhanced state management
   const [activeTab, setActiveTab] = useState<'create' | 'customers' | 'orders'>('create');
@@ -157,6 +172,10 @@ const Orders = ({ socket }: { socket: Socket }) => {
     customers: false,
     products: false
   });
+
+  // Mobile state
+  const [isMobile, setIsMobile] = useState(false);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   // Animation states
   const [tabTransition, setTabTransition] = useState(false);
@@ -178,6 +197,19 @@ const Orders = ({ socket }: { socket: Socket }) => {
   const [productSearchQuery, setProductSearchQuery] = useState<string[]>([]);
   const [productSuggestions, setProductSuggestions] = useState<Product[][]>([]);
 
+  // Order search state
+  const [orderSearchQuery, setOrderSearchQuery] = useState('');
+
+  // Customer filter state
+  const [customerFilter, setCustomerFilter] = useState<'all' | 'pending' | 'clear'>('all');
+
+  // Security states
+  const [showPasswordModal, setShowPasswordModal] = useState(false);
+  const [passwordInput, setPasswordInput] = useState('');
+  const [showPinModal, setShowPinModal] = useState(false);
+  const [pinInput, setPinInput] = useState('');
+  const [pendingDeleteOrderId, setPendingDeleteOrderId] = useState<string | null>(null);
+
   const codeReader = useRef(
     new BrowserMultiFormatReader(
       new Map([[DecodeHintType.TRY_HARDER, true]])
@@ -192,6 +224,7 @@ const Orders = ({ socket }: { socket: Socket }) => {
     pendingPayments: 0,
   });
 
+  // UPDATED: Order form data with proper productId
   const [orderFormData, setOrderFormData] = useState<OrderFormData>({
     customerId: '',
     customerName: '',
@@ -199,12 +232,24 @@ const Orders = ({ socket }: { socket: Socket }) => {
     customerPhone: '',
     customerAddress: '',
     customerPendingPayments: 0,
-    items: [{ productName: '', quantity: '', unitPrice: '' }],
+    items: [{ productId: '', productName: '', quantity: '', unitPrice: '', unit: '' }],
     paymentMethod: 'Cash',
     personalized: false,
   });
 
   const [showProductSuggestions, setShowProductSuggestions] = useState<boolean[]>([]);
+
+  // Check for mobile viewport
+  useEffect(() => {
+    const checkMobile = () => {
+      setIsMobile(window.innerWidth <= 768);
+    };
+    
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
+    
+    return () => window.removeEventListener('resize', checkMobile);
+  }, []);
 
   // Enhanced tab switching with smooth animation
   const handleTabChange = (tab: 'create' | 'customers' | 'orders') => {
@@ -213,6 +258,7 @@ const Orders = ({ socket }: { socket: Socket }) => {
       setActiveTab(tab);
       setTimeout(() => setTabTransition(false), 300);
     }, 150);
+    setMobileMenuOpen(false);
   };
 
   // Enhanced success message with animations
@@ -237,6 +283,56 @@ const Orders = ({ socket }: { socket: Socket }) => {
       onCancel
     });
     setShowConfirmation(true);
+  };
+
+  // Password verification for personalized orders
+  const handleShowPersonalizedOrders = () => {
+    setShowPasswordModal(true);
+  };
+
+  const verifyPassword = () => {
+    if (passwordInput === PERSONALIZED_ORDERS_PASSWORD) {
+      setShowHiddenOrders(true);
+      setShowPasswordModal(false);
+      setPasswordInput('');
+      showSuccessMessage('Access Granted', 'You can now view personalized orders');
+    } else {
+      setError('Incorrect password. Please try again.');
+      setPasswordInput('');
+    }
+  };
+
+  // PIN verification for order deletion
+  const handleDeleteOrderClick = (orderId: string) => {
+    setPendingDeleteOrderId(orderId);
+    setShowPinModal(true);
+  };
+
+  const verifyPin = () => {
+    if (pinInput === DELETE_ORDER_PIN) {
+      if (pendingDeleteOrderId) {
+        showConfirmationModal(
+          'Delete Order',
+          `Are you sure you want to delete order #${pendingDeleteOrderId.slice(-8)}? This action cannot be undone.`,
+          'delete',
+          async () => {
+            try {
+              await api.delete(`/api/orders/${pendingDeleteOrderId}`);
+              setOrders(orders.filter(o => o._id !== pendingDeleteOrderId));
+              showSuccessMessage('Order Deleted', `Order #${pendingDeleteOrderId.slice(-8)} has been deleted successfully!`);
+            } catch (err: any) {
+              setError('Failed to delete order: ' + (err.response?.data?.error || err.message));
+            }
+          }
+        );
+      }
+      setShowPinModal(false);
+      setPinInput('');
+      setPendingDeleteOrderId(null);
+    } else {
+      setError('Incorrect PIN. Please try again.');
+      setPinInput('');
+    }
   };
 
   // Validation functions
@@ -290,9 +386,35 @@ const Orders = ({ socket }: { socket: Socket }) => {
         name: product.name || '',
         productId: product.productId || product._id || '',
         unitPrice: product.unitPrice || 0,
-        barcode: product.barcode || ''
+        barcode: product.barcode || '',
+        quantity: product.quantity || 0,
+        unit: product.unit || ''
       }));
       setProducts(productsData);
+      // Build flattened variant list for better search (e.g., "Samahan 50g")
+      const flat: any[] = [];
+      response.data.forEach((product: any) => {
+        const pt = product.productType || '';
+        const cat = product.category || '';
+        const variants = Array.isArray(product.variants) ? product.variants : [];
+        variants.forEach((v: any, idx: number) => {
+          const size = v.size || '';
+          const displayName = `${pt} ${size}`.trim();
+          flat.push({
+            productId: product._id,
+            productType: pt,
+            category: cat,
+            variantIndex: idx,
+            displayName,
+            size,
+            price: Number(v.price || 0),
+            stock: Number(v.stock || 0),
+            barcode: v.barcode || '',
+            rawProduct: product
+          });
+        });
+      });
+      setProductsFlat(flat);
     } catch (err: any) {
       console.error('Failed to fetch products:', err.response?.data || err.message);
       setError('Failed to load products. Please try again.');
@@ -311,10 +433,18 @@ const Orders = ({ socket }: { socket: Socket }) => {
       socket.on('orderUpdated', (updatedOrder: Order) => {
         setOrders((prev) => prev.map((order) => (order._id === updatedOrder._id ? updatedOrder : order)));
       });
+      
+      // NEW: Listen for product updates when stock changes
+      socket.on('productUpdated', (updatedProduct: Product) => {
+        setProducts((prev) => prev.map((product) => 
+          product._id === updatedProduct._id ? updatedProduct : product
+        ));
+      });
 
       return () => {
         socket.off('orderCreated');
         socket.off('orderUpdated');
+        socket.off('productUpdated');
       };
     }
   }, [socket]);
@@ -326,7 +456,7 @@ const Orders = ({ socket }: { socket: Socket }) => {
     setShowProductSuggestions(Array(orderFormData.items.length).fill(false));
   }, [orderFormData.items.length]);
 
-  // Enhanced barcode scanning
+  // Enhanced barcode scanning - UPDATED to include productId
   useEffect(() => {
     if (showScanner && videoRef.current) {
       codeReader.current.decodeFromVideoDevice(
@@ -342,9 +472,11 @@ const Orders = ({ socket }: { socket: Socket }) => {
                 setOrderFormData((prev) => ({
                   ...prev,
                   items: [...prev.items, { 
+                    productId: product._id, // Include productId
                     productName: product.name, 
                     quantity: '1', 
-                    unitPrice: product.unitPrice.toString() 
+                    unitPrice: product.unitPrice.toString(),
+                    unit: product.unit || ''
                   }],
                 }));
                 setError(null);
@@ -394,6 +526,58 @@ const Orders = ({ socket }: { socket: Socket }) => {
     }
   };
 
+  // Order search handler
+  const handleOrderSearch = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setOrderSearchQuery(e.target.value);
+  };
+
+  // Filter customers based on pending/clear filter
+  const filteredCustomersByPayment = customers.filter(customer => {
+    if (customerFilter === 'pending') {
+      return customer.pendingPayments > 0;
+    } else if (customerFilter === 'clear') {
+      return customer.pendingPayments === 0;
+    }
+    return true;
+  });
+
+  // Order filtering function
+  const filterOrders = (orders: Order[], query: string) => {
+    if (!query) return orders;
+    
+    const lowerQuery = query.toLowerCase();
+    return orders.filter(order => {
+      // Search by order ID
+      if (order._id.toLowerCase().includes(lowerQuery)) return true;
+      
+      // Search by customer information
+      if (order.customer) {
+        if (
+          order.customer.name.toLowerCase().includes(lowerQuery) ||
+          order.customer.email.toLowerCase().includes(lowerQuery) ||
+          order.customer.phone.includes(lowerQuery)
+        ) return true;
+      }
+      
+      // Search by product names in items
+      if (order.items.some(item => 
+        item.productName.toLowerCase().includes(lowerQuery)
+      )) return true;
+      
+      // Search by status
+      if (order.status.toLowerCase().includes(lowerQuery)) return true;
+      
+      // Search by payment method
+      if (order.paymentMethod.toLowerCase().includes(lowerQuery)) return true;
+      
+      // Search by date
+      const orderDate = new Date(order.createdAt).toLocaleDateString();
+      if (orderDate.includes(query)) return true;
+      
+      return false;
+    });
+  };
+
   const handleCustomerSelect = (customer: Customer) => {
     setOrderFormData({
       ...orderFormData,
@@ -416,14 +600,20 @@ const Orders = ({ socket }: { socket: Socket }) => {
 
     const newItems = [...orderFormData.items];
     newItems[index].productName = query;
+    // Clear productId when user types manually
+    newItems[index].productId = '';
+    newItems[index].unit = '';
     setOrderFormData({ ...orderFormData, items: newItems });
 
-    // Filter products based on search query
+    // Filter flattened variants based on search query (matches productType, size, category, barcode)
+    const normalize = (s: string) => s ? s.toString().toLowerCase().replace(/\s+/g, ' ').trim() : '';
     if (query.length > 0) {
-      const filtered = products.filter(product => 
-        product.name.toLowerCase().includes(query.toLowerCase())
-      ).slice(0, 5); // Limit to 5 suggestions
-      
+      const q = normalize(query);
+      const filtered = productsFlat.filter(p => {
+        const hay = [p.displayName, p.productType, p.category, p.size, p.barcode].map(normalize).join(' ');
+        return hay.includes(q);
+      }).slice(0, 8);
+
       const newSuggestions = [...productSuggestions];
       newSuggestions[index] = filtered;
       setProductSuggestions(newSuggestions);
@@ -434,13 +624,36 @@ const Orders = ({ socket }: { socket: Socket }) => {
     }
   };
 
-  // Enhanced product selection
+  // When a flattened variant is selected
+  const handleVariantSelect = (index: number, variant: any) => {
+    const newItems = [...orderFormData.items];
+    newItems[index] = {
+      productId: variant.productId,
+      productName: variant.displayName,
+      quantity: newItems[index].quantity || '1',
+      unitPrice: variant.price ? variant.price.toString() : '0',
+      unit: variant.size || ''
+    };
+    setOrderFormData({ ...orderFormData, items: newItems });
+
+    // clear suggestions
+    const newSuggestions = [...productSuggestions];
+    newSuggestions[index] = [];
+    setProductSuggestions(newSuggestions);
+    const newShow = [...showProductSuggestions];
+    newShow[index] = false;
+    setShowProductSuggestions(newShow);
+  };
+
+  // Enhanced product selection - UPDATED to include all product data
   const handleProductSelect = (index: number, product: Product) => {
     const newItems = [...orderFormData.items];
     newItems[index] = {
+      productId: product._id, // Set the productId
       productName: product.name,
       quantity: newItems[index].quantity || '1',
-      unitPrice: product.unitPrice.toString()
+      unitPrice: product.unitPrice.toString(),
+      unit: product.unit || '' // Set the unit
     };
     
     setOrderFormData({ ...orderFormData, items: newItems });
@@ -712,7 +925,13 @@ const Orders = ({ socket }: { socket: Socket }) => {
   const addItem = () => {
     setOrderFormData({
       ...orderFormData,
-      items: [...orderFormData.items, { productName: '', quantity: '', unitPrice: '' }],
+      items: [...orderFormData.items, { 
+        productId: '', 
+        productName: '', 
+        quantity: '', 
+        unitPrice: '',
+        unit: ''
+      }],
     });
   };
 
@@ -735,6 +954,7 @@ const Orders = ({ socket }: { socket: Socket }) => {
     );
   };
 
+  // UPDATED: Order submission with productId validation and stock checking
   const handleOrderSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
@@ -743,8 +963,34 @@ const Orders = ({ socket }: { socket: Socket }) => {
       return;
     }
 
+    // Validate that all items have productId
+    const itemsWithMissingProductId = orderFormData.items.filter(item => !item.productId);
+    if (itemsWithMissingProductId.length > 0) {
+      setError('Please select valid products from the list for all items. Product selection is required for stock management.');
+      return;
+    }
+
     if (orderFormData.items.length === 0 || orderFormData.items.some(item => !item.productName || !item.quantity || !item.unitPrice)) {
       setError('Please add at least one valid order item.');
+      return;
+    }
+
+    // Check stock availability before submitting
+    try {
+      for (const item of orderFormData.items) {
+        // Find the variant in the flattened products list (check both by productId and productName)
+        const variant = productsFlat.find(v => v.productId === item.productId && v.displayName === item.productName);
+        if (variant) {
+          const currentStock = variant.stock || 0;
+          const requestedQuantity = Number(item.quantity);
+          if (currentStock < requestedQuantity) {
+            setError(`Insufficient stock for ${item.productName}. Available: ${currentStock}, Requested: ${requestedQuantity}`);
+            return;
+          }
+        }
+      }
+    } catch (err: any) {
+      setError('Failed to check stock availability. Please try again.');
       return;
     }
 
@@ -754,11 +1000,15 @@ const Orders = ({ socket }: { socket: Socket }) => {
       'info',
       async () => {
         try {
+          // UPDATED: Include productId and variant size in the items for stock checking
           const items = orderFormData.items.map((item) => ({
+            productId: item.productId, // This is now required
             productName: item.productName,
             quantity: Number(item.quantity),
             unitPrice: Number(item.unitPrice),
+            unit: item.unit || '', // Send variant size for backend stock lookup
           }));
+          
           const response = await api.post('/api/orders', {
             customerId: orderFormData.customerId,
             items,
@@ -773,12 +1023,13 @@ const Orders = ({ socket }: { socket: Socket }) => {
             customerPhone: '',
             customerAddress: '',
             customerPendingPayments: 0,
-            items: [{ productName: '', quantity: '', unitPrice: '' }],
+            items: [{ productId: '', productName: '', quantity: '', unitPrice: '', unit: '' }],
             paymentMethod: 'Cash',
             personalized: false,
           });
           setLastCreatedOrder(response.data);
           fetchOrders();
+          fetchProducts(); // Refresh products to get updated stock
           setError(null);
           showSuccessMessage('Order Created', `Order ${response.data._id} has been created successfully!`);
           handleTabChange('orders');
@@ -797,6 +1048,15 @@ const Orders = ({ socket }: { socket: Socket }) => {
   const grandTotal = currentTotal + orderFormData.customerPendingPayments;
 
   // Enhanced order statistics
+  const regularOrders = orders.filter((order) => !order.personalized);
+  const personalizedOrders = orders.filter((order) => order.personalized);
+  
+  // Filter orders based on search and showHiddenOrders
+  const displayedOrders = filterOrders(
+    showHiddenOrders ? orders : regularOrders, 
+    orderSearchQuery
+  );
+
   const orderStats = {
     total: orders.length,
     completed: orders.filter(o => o.status === 'completed').length,
@@ -834,9 +1094,6 @@ const Orders = ({ socket }: { socket: Socket }) => {
     }
   };
 
-  const regularOrders = orders.filter((order) => !order.personalized);
-  const personalizedOrders = orders.filter((order) => order.personalized);
-
   const formatDate = (dateString: string) => {
     return new Date(dateString).toLocaleDateString('en-US', {
       year: 'numeric',
@@ -860,165 +1117,449 @@ const Orders = ({ socket }: { socket: Socket }) => {
     }
   };
 
+  // NEW: Function to get stock status for a product
+  const getStockStatus = (product: Product) => {
+    if (product.quantity === undefined || product.quantity === null) {
+      return { text: 'No Stock', color: 'text-red-500', bg: 'bg-red-50' };
+    }
+    if (product.quantity === 0) {
+      return { text: 'Out of Stock', color: 'text-red-500', bg: 'bg-red-50' };
+    }
+    if (product.quantity <= (product.lowStockThreshold || 10)) {
+      return { text: 'Low Stock', color: 'text-orange-500', bg: 'bg-orange-50' };
+    }
+    return { text: 'In Stock', color: 'text-green-500', bg: 'bg-green-50' };
+  };
+
   // Enhanced input focus styles using Tailwind
   const inputFocusStyle = "focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200";
 
-  return (
-    <div className="min-h-screen" style={{ backgroundColor: colors.background }}>
-      <div className="p-6 max-w-7xl mx-auto">
-        {/* Enhanced Header Section */}
-<div className="mb-8">
-  <div className="flex items-center justify-between">
-    <div className="flex items-center space-x-4">
-      <div 
-        className="p-3 rounded-2xl shadow-lg transition-all duration-300 hover:scale-105 hover:shadow-xl"
-        style={{ backgroundColor: colors.primary }}
-      >
-        <ShoppingCart className="h-8 w-8 text-white" />
+  // Mobile Customer Row Component
+  const MobileCustomerRow = ({ customer }: { customer: Customer }) => (
+    <div className="bg-white rounded-lg border border-gray-200 p-4 mb-3 shadow-sm">
+      <div className="flex justify-between items-start mb-3">
+        <div className="flex-1">
+          <h3 className="font-semibold text-gray-900 text-lg">{customer.name}</h3>
+          <div className="flex items-center space-x-2 text-sm text-gray-600 mt-1">
+            <Phone className="h-3 w-3" />
+            <span>{customer.phone}</span>
+          </div>
+        </div>
+        <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+          customer.pendingPayments > 0 
+            ? 'bg-orange-100 text-orange-800' 
+            : 'bg-green-100 text-green-800'
+        }`}>
+          {customer.pendingPayments > 0 ? 'Pending' : 'Clear'}
+        </span>
       </div>
-      <div>
-        <h1 
-          className="text-4xl font-bold transition-all duration-500"
-          style={{ 
-            color: colors.primary,
-            textShadow: '0 2px 4px rgba(5, 59, 80, 0.1)'
-          }}
-        >
-          Order Management
-        </h1>
-        <p className="mt-2 text-gray-600">Streamline your order processing and customer management</p>
+      
+      <div className="space-y-2 text-sm text-gray-600">
+        <div className="flex items-center space-x-2">
+          <Mail className="h-3 w-3" />
+          <span className="truncate">{customer.email}</span>
+        </div>
+        <div className="flex items-start space-x-2">
+          <MapPin className="h-3 w-3 mt-0.5 flex-shrink-0" />
+          <span className="flex-1">{customer.address}</span>
+        </div>
+      </div>
+      
+      <div className="flex justify-between items-center mt-4 pt-3 border-t border-gray-200">
+        <div>
+          <span className="text-sm font-semibold text-orange-600">
+            LKR {customer.pendingPayments.toLocaleString()}
+          </span>
+          <div className="text-xs text-gray-500">Pending</div>
+        </div>
+        
+        <div className="flex space-x-2">
+          <button
+            onClick={() => generateCustomerInvoices(customer._id)}
+            className="flex items-center space-x-1 bg-blue-500 text-white px-3 py-2 rounded-lg hover:bg-blue-600 transition-colors text-sm"
+          >
+            <Download className="h-3 w-3" />
+            <span className="hidden sm:inline">Invoices</span>
+          </button>
+          <button
+            onClick={() => handleEditCustomer(customer)}
+            className="flex items-center space-x-1 text-white px-3 py-2 rounded-lg hover:bg-blue-600 transition-colors text-sm"
+            style={{ backgroundColor: colors.secondary }}
+          >
+            <Edit className="h-3 w-3" />
+          </button>
+          <button
+            onClick={() => handleDeleteCustomer(customer._id)}
+            className="flex items-center space-x-1 bg-red-500 text-white px-3 py-2 rounded-lg hover:bg-red-600 transition-colors text-sm"
+          >
+            <Trash2 className="h-3 w-3" />
+          </button>
+        </div>
       </div>
     </div>
-    <div className="flex items-center space-x-3">
-      <div className="bg-white rounded-xl shadow-sm border border-gray-200 px-4 py-3 text-center transition-all duration-300 hover:scale-105 hover:shadow-lg">
-        <div className="text-sm text-gray-600">Total Orders</div>
-        <div className="text-2xl font-bold" style={{ color: colors.primary }}>{orderStats.total}</div>
-      </div>
-      <div className="bg-white rounded-xl shadow-sm border border-gray-200 px-4 py-3 text-center transition-all duration-300 hover:scale-105 hover:shadow-lg">
-        <div className="text-sm text-gray-600">Revenue</div>
-        <div className="text-2xl font-bold text-green-600">LKR {orderStats.revenue.toLocaleString()}</div>
-      </div>
-    </div>
-  </div>
-</div>
+  );
 
-        {/* Enhanced Navigation Tabs with Smooth Transitions */}
-        <div className="mb-8">
-          <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-2">
-            <div className="flex space-x-2">
-              <button
-                onClick={() => handleTabChange('create')}
-                onMouseEnter={() => setHoveredTab('create')}
-                onMouseLeave={() => setHoveredTab(null)}
-                className={`flex items-center space-x-2 px-6 py-4 rounded-xl transition-all duration-500 flex-1 justify-center relative overflow-hidden group ${
-                  activeTab === 'create' 
-                    ? 'text-white shadow-lg transform scale-105' 
-                    : 'text-gray-600 hover:text-gray-800 hover:bg-gray-50'
-                }`}
-                style={{
-                  background: activeTab === 'create' 
-                    ? `linear-gradient(135deg, ${colors.primary}, #064e6a)`
-                    : hoveredTab === 'create'
-                    ? `linear-gradient(135deg, ${colors.primary}15, ${colors.primary}25)`
-                    : 'transparent',
-                  transform: activeTab === 'create' ? 'scale(1.05)' : hoveredTab === 'create' ? 'scale(1.02)' : 'scale(1)'
-                }}
-              >
-                {/* Animated background effect */}
-                <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-1000"></div>
-                
-                <Plus className="h-5 w-5 relative z-10 transition-transform duration-300 group-hover:scale-110" />
-                <span className="font-semibold relative z-10 transition-all duration-300 group-hover:tracking-wide">Create Order</span>
-                
-                {/* Active indicator */}
-                {activeTab === 'create' && (
-                  <div 
-                    className="absolute bottom-0 left-1/2 transform -translate-x-1/2 w-4 h-1 rounded-full transition-all duration-300"
-                    style={{ backgroundColor: colors.accent }}
-                  ></div>
-                )}
-              </button>
-
-              <button
-                onClick={() => handleTabChange('customers')}
-                onMouseEnter={() => setHoveredTab('customers')}
-                onMouseLeave={() => setHoveredTab(null)}
-                className={`flex items-center space-x-2 px-6 py-4 rounded-xl transition-all duration-500 flex-1 justify-center relative overflow-hidden group ${
-                  activeTab === 'customers' 
-                    ? 'text-white shadow-lg transform scale-105' 
-                    : 'text-gray-600 hover:text-gray-800 hover:bg-gray-50'
-                }`}
-                style={{
-                  background: activeTab === 'customers' 
-                    ? `linear-gradient(135deg, ${colors.secondary}, #1a7a9a)`
-                    : hoveredTab === 'customers'
-                    ? `linear-gradient(135deg, ${colors.secondary}15, ${colors.secondary}25)`
-                    : 'transparent',
-                  transform: activeTab === 'customers' ? 'scale(1.05)' : hoveredTab === 'customers' ? 'scale(1.02)' : 'scale(1)'
-                }}
-              >
-                {/* Animated background effect */}
-                <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-1000"></div>
-                
-                <User className="h-5 w-5 relative z-10 transition-transform duration-300 group-hover:scale-110" />
-                <span className="font-semibold relative z-10 transition-all duration-300 group-hover:tracking-wide">Customers</span>
-                
-                {/* Active indicator */}
-                {activeTab === 'customers' && (
-                  <div 
-                    className="absolute bottom-0 left-1/2 transform -translate-x-1/2 w-4 h-1 rounded-full transition-all duration-300"
-                    style={{ backgroundColor: colors.accent }}
-                  ></div>
-                )}
-              </button>
-
-              <button
-                onClick={() => handleTabChange('orders')}
-                onMouseEnter={() => setHoveredTab('orders')}
-                onMouseLeave={() => setHoveredTab(null)}
-                className={`flex items-center space-x-2 px-6 py-4 rounded-xl transition-all duration-500 flex-1 justify-center relative overflow-hidden group ${
-                  activeTab === 'orders' 
-                    ? 'text-white shadow-lg transform scale-105' 
-                    : 'text-gray-600 hover:text-gray-800 hover:bg-gray-50'
-                }`}
-                style={{
-                  background: activeTab === 'orders' 
-                    ? `linear-gradient(135deg, ${colors.accent}, #7ae0d8)`
-                    : hoveredTab === 'orders'
-                    ? `linear-gradient(135deg, ${colors.accent}15, ${colors.accent}25)`
-                    : 'transparent',
-                  transform: activeTab === 'orders' ? 'scale(1.05)' : hoveredTab === 'orders' ? 'scale(1.02)' : 'scale(1)'
-                }}
-              >
-                {/* Animated background effect */}
-                <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-1000"></div>
-                
-                <Package className="h-5 w-5 relative z-10 transition-transform duration-300 group-hover:scale-110" />
-                <span className="font-semibold relative z-10 transition-all duration-300 group-hover:tracking-wide">Order History</span>
-                
-                {/* Active indicator */}
-                {activeTab === 'orders' && (
-                  <div 
-                    className="absolute bottom-0 left-1/2 transform -translate-x-1/2 w-4 h-1 rounded-full transition-all duration-300"
-                    style={{ backgroundColor: colors.primary }}
-                  ></div>
-                )}
-              </button>
+  // Mobile Order Card Component
+  const MobileOrderCard = ({ order }: { order: Order }) => (
+    <div className={`bg-white rounded-lg border transition-all duration-300 mb-4 ${
+      order.personalized ? 'border-orange-200' : 'border-gray-200'
+    }`}>
+      <div className="p-4">
+        <div className="flex justify-between items-start mb-3">
+          <div className="flex-1">
+            <div className="flex items-center space-x-2 mb-2">
+              <h3 className="font-semibold text-gray-900">
+                Order #{order._id.slice(-8)}
+              </h3>
+              {order.personalized && (
+                <span className="bg-orange-100 text-orange-800 px-2 py-1 rounded-full text-xs font-medium">
+                  Personalized
+                </span>
+              )}
+            </div>
+            <div className="flex items-center space-x-2 mb-2">
+              <span className={`px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(order.status)}`}>
+                {order.status}
+              </span>
+              <span className="text-sm text-gray-600">
+                {formatDate(order.createdAt)}
+              </span>
+            </div>
+            {order.customer && (
+              <p className="text-sm text-gray-700">
+                {order.customer.name}
+              </p>
+            )}
+          </div>
+          <button
+            onClick={() => setExpandedOrder(expandedOrder === order._id ? null : order._id)}
+            className="flex items-center space-x-1 text-gray-500 hover:text-gray-700"
+          >
+            {expandedOrder === order._id ? (
+              <ChevronUp className="h-4 w-4" />
+            ) : (
+              <ChevronDown className="h-4 w-4" />
+            )}
+          </button>
+        </div>
+        
+        <div className="grid grid-cols-3 gap-2 mb-3">
+          <div className="text-center p-2 bg-gray-100 rounded-lg">
+            <div className="text-xs text-gray-600">Items</div>
+            <div className="font-semibold text-sm">{order.items.length}</div>
+          </div>
+          <div className="text-center p-2 bg-gray-100 rounded-lg">
+            <div className="text-xs text-gray-600">Total</div>
+            <div className="font-semibold text-sm text-green-600">
+              LKR {order.totalAmount.toLocaleString()}
+            </div>
+          </div>
+          <div className="text-center p-2 bg-gray-100 rounded-lg">
+            <div className="text-xs text-gray-600">Pending</div>
+            <div className="font-semibold text-sm text-orange-600">
+              LKR {order.pendingPayments.toLocaleString()}
             </div>
           </div>
         </div>
+        
+        <div className="flex flex-col space-y-2">
+          <button
+            onClick={() => generateInvoice(order)}
+            disabled={!order.customer}
+            className="flex items-center justify-center space-x-2 bg-green-500 text-white px-4 py-2 rounded-lg hover:bg-green-600 disabled:bg-gray-300 transition-colors text-sm"
+          >
+            <Download className="h-3 w-3" />
+            <span>Download Invoice</span>
+          </button>
+          <button
+            onClick={() => sendInvoiceViaWhatsApp(order)}
+            disabled={!order.customer}
+            className="flex items-center justify-center space-x-2 text-white px-4 py-2 rounded-lg hover:bg-blue-600 disabled:bg-gray-300 transition-colors text-sm"
+            style={{ backgroundColor: colors.secondary }}
+          >
+            <Send className="h-3 w-3" />
+            <span>Send via WhatsApp</span>
+          </button>
+          <button
+            onClick={() => handleDeleteOrderClick(order._id)}
+            className="flex items-center justify-center space-x-2 bg-red-500 text-white px-4 py-2 rounded-lg hover:bg-red-600 transition-colors text-sm"
+          >
+            <Trash2 className="h-3 w-3" />
+            <span>Delete Order</span>
+          </button>
+        </div>
+        
+        {expandedOrder === order._id && (
+          <div className="mt-4 pt-4 border-t border-gray-200">
+            <h4 className="font-medium text-gray-900 mb-3">Order Items</h4>
+            <div className="space-y-3">
+              {order.items.map((item, idx) => (
+                <div key={idx} className="flex justify-between items-center p-3 bg-gray-50 rounded-lg">
+                  <div className="flex-1">
+                    <div className="font-medium text-gray-900 text-sm">{item.productName}</div>
+                    <div className="text-xs text-gray-600">Qty: {item.quantity}</div>
+                    {item.unit && (
+                      <div className="text-xs text-gray-500 flex items-center mt-1">
+                        <Layers className="h-3 w-3 mr-1" />
+                        {item.unit}
+                      </div>
+                    )}
+                  </div>
+                  <div className="text-right">
+                    <div className="font-semibold text-gray-900 text-sm">LKR {item.unitPrice}</div>
+                    <div className="text-xs text-green-600">
+                      LKR {(item.quantity * item.unitPrice).toLocaleString()}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+            
+            <div className="mt-4 p-3 bg-gray-50 rounded-lg">
+              <div className="text-sm space-y-2">
+                <div className="flex justify-between">
+                  <span className="text-gray-600">Payment Method:</span>
+                  <span className="font-medium">{order.paymentMethod}</span>
+                </div>
+                {order.customer && (
+                  <>
+                    <div className="flex justify-between">
+                      <span className="text-gray-600">Phone:</span>
+                      <span className="font-medium">{order.customer.phone}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-gray-600">Email:</span>
+                      <span className="font-medium">{order.customer.email}</span>
+                    </div>
+                  </>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+
+  return (
+    <div className="min-h-screen bg-gray-50">
+      <div className={`p-4 lg:p-6 max-w-7xl mx-auto ${isMobile ? 'mobile-container' : ''}`}>
+        {/* Mobile Header */}
+        {isMobile && (
+          <div className="mb-6">
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center space-x-3">
+                <div className="p-2 rounded-xl shadow-lg" style={{ backgroundColor: colors.primary }}>
+                  <ShoppingCart className="h-6 w-6 text-white" />
+                </div>
+                <div>
+                  <h1 className="text-xl font-bold" style={{ color: colors.primary }}>
+                    Order Management
+                  </h1>
+                  <p className="text-gray-600 text-xs">Streamline your order processing</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+                className="p-2 rounded-lg bg-white shadow-sm border border-gray-200"
+              >
+                <Menu className="h-5 w-5 text-gray-600" />
+              </button>
+            </div>
+            
+            {/* Mobile Stats */}
+            <div className="grid grid-cols-2 gap-3 mb-4">
+              <div className="bg-white rounded-lg p-3 shadow-sm border border-gray-200 text-center">
+                <div className="text-xs text-gray-600">Total Orders</div>
+                <div className="text-lg font-bold" style={{ color: colors.primary }}>
+                  {orderStats.total}
+                </div>
+              </div>
+              <div className="bg-white rounded-lg p-3 shadow-sm border border-gray-200 text-center">
+                <div className="text-xs text-gray-600">Revenue</div>
+                <div className="text-lg font-bold text-green-600">
+                  LKR {orderStats.revenue.toLocaleString()}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Desktop Header */}
+        {!isMobile && (
+          <div className="mb-8">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center space-x-4">
+                <div 
+                  className="p-3 rounded-2xl shadow-lg transition-all duration-300 hover:scale-105 hover:shadow-xl"
+                  style={{ backgroundColor: colors.primary }}
+                >
+                  <ShoppingCart className="h-8 w-8 text-white" />
+                </div>
+                <div>
+                  <h1 
+                    className="text-4xl font-bold transition-all duration-500"
+                    style={{ 
+                      color: colors.primary,
+                      textShadow: '0 2px 4px rgba(5, 59, 80, 0.1)'
+                    }}
+                  >
+                    Order Management
+                  </h1>
+                  <p className="mt-2 text-gray-600">Streamline your order processing and customer management</p>
+                </div>
+              </div>
+              <div className="flex items-center space-x-3">
+                <div className="bg-white rounded-xl shadow-sm border border-gray-200 px-4 py-3 text-center transition-all duration-300 hover:scale-105 hover:shadow-lg">
+                  <div className="text-sm text-gray-600">Total Orders</div>
+                  <div className="text-2xl font-bold" style={{ color: colors.primary }}>{orderStats.total}</div>
+                </div>
+                <div className="bg-white rounded-xl shadow-sm border border-gray-200 px-4 py-3 text-center transition-all duration-300 hover:scale-105 hover:shadow-lg">
+                  <div className="text-sm text-gray-600">Revenue</div>
+                  <div className="text-2xl font-bold text-green-600">LKR {orderStats.revenue.toLocaleString()}</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Mobile Navigation */}
+        {isMobile && (
+          <div className="mb-6">
+            <div className={`bg-white rounded-xl shadow-sm border border-gray-200 p-1 ${mobileMenuOpen ? 'block' : 'hidden'}`}>
+              <div className="space-y-1">
+                {['create', 'customers', 'orders'].map((tab) => (
+                  <button
+                    key={tab}
+                    onClick={() => handleTabChange(tab as any)}
+                    className={`flex items-center space-x-3 w-full p-4 rounded-lg transition-all duration-300 ${
+                      activeTab === tab 
+                        ? 'text-white shadow-lg' 
+                        : 'text-gray-600 hover:bg-gray-50'
+                    }`}
+                    style={{
+                      background: activeTab === tab ? `linear-gradient(135deg, ${colors.primary}, #064e6a)` : 'transparent'
+                    }}
+                  >
+                    {tab === 'create' && <Plus className="h-5 w-5" />}
+                    {tab === 'customers' && <User className="h-5 w-5" />}
+                    {tab === 'orders' && <Package className="h-5 w-5" />}
+                    <span className="font-semibold capitalize">
+                      {tab === 'create' ? 'New Order' : tab}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </div>
+            
+            {/* Mobile Tab Indicators */}
+            <div className="flex justify-between bg-white rounded-xl shadow-sm border border-gray-200 p-1">
+              {['create', 'customers', 'orders'].map((tab) => (
+                <button
+                  key={tab}
+                  onClick={() => handleTabChange(tab as any)}
+                  className={`flex-1 py-3 text-center text-sm font-medium rounded-lg transition-all duration-300 ${
+                    activeTab === tab 
+                      ? 'text-white' 
+                      : 'text-gray-600'
+                  }`}
+                  style={{
+                    background: activeTab === tab ? colors.primary : 'transparent'
+                  }}
+                >
+                  {tab === 'create' ? 'New' : tab === 'customers' ? 'Customers' : 'Orders'}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Desktop Navigation */}
+        {!isMobile && (
+          <div className="mb-8">
+            <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-2">
+              <div className="flex space-x-2">
+                <button
+                  onClick={() => handleTabChange('create')}
+                  onMouseEnter={() => setHoveredTab('create')}
+                  onMouseLeave={() => setHoveredTab(null)}
+                  className={`flex items-center space-x-2 px-6 py-4 rounded-xl transition-all duration-500 flex-1 justify-center relative overflow-hidden group ${
+                    activeTab === 'create' 
+                      ? 'text-white shadow-lg transform scale-105' 
+                      : 'text-gray-600 hover:text-gray-800 hover:bg-gray-50'
+                  }`}
+                  style={{
+                    background: activeTab === 'create' 
+                      ? `linear-gradient(135deg, ${colors.primary}, #064e6a)`
+                      : hoveredTab === 'create'
+                      ? `linear-gradient(135deg, ${colors.primary}15, ${colors.primary}25)`
+                      : 'transparent',
+                    transform: activeTab === 'create' ? 'scale(1.05)' : hoveredTab === 'create' ? 'scale(1.02)' : 'scale(1)'
+                  }}
+                >
+                  <Plus className="h-5 w-5 relative z-10 transition-transform duration-300 group-hover:scale-110" />
+                  <span className="font-semibold relative z-10 transition-all duration-300 group-hover:tracking-wide">Create Order</span>
+                </button>
+
+                <button
+                  onClick={() => handleTabChange('customers')}
+                  onMouseEnter={() => setHoveredTab('customers')}
+                  onMouseLeave={() => setHoveredTab(null)}
+                  className={`flex items-center space-x-2 px-6 py-4 rounded-xl transition-all duration-500 flex-1 justify-center relative overflow-hidden group ${
+                    activeTab === 'customers' 
+                      ? 'text-white shadow-lg transform scale-105' 
+                      : 'text-gray-600 hover:text-gray-800 hover:bg-gray-50'
+                  }`}
+                  style={{
+                    background: activeTab === 'customers' 
+                      ? `linear-gradient(135deg, ${colors.secondary}, #1a7a9a)`
+                      : hoveredTab === 'customers'
+                      ? `linear-gradient(135deg, ${colors.secondary}15, ${colors.secondary}25)`
+                      : 'transparent',
+                    transform: activeTab === 'customers' ? 'scale(1.05)' : hoveredTab === 'customers' ? 'scale(1.02)' : 'scale(1)'
+                  }}
+                >
+                  <User className="h-5 w-5 relative z-10 transition-transform duration-300 group-hover:scale-110" />
+                  <span className="font-semibold relative z-10 transition-all duration-300 group-hover:tracking-wide">Customers</span>
+                </button>
+
+                <button
+                  onClick={() => handleTabChange('orders')}
+                  onMouseEnter={() => setHoveredTab('orders')}
+                  onMouseLeave={() => setHoveredTab(null)}
+                  className={`flex items-center space-x-2 px-6 py-4 rounded-xl transition-all duration-500 flex-1 justify-center relative overflow-hidden group ${
+                    activeTab === 'orders' 
+                      ? 'text-white shadow-lg transform scale-105' 
+                      : 'text-gray-600 hover:text-gray-800 hover:bg-gray-50'
+                  }`}
+                  style={{
+                    background: activeTab === 'orders' 
+                      ? `linear-gradient(135deg, ${colors.accent}, #7ae0d8)`
+                      : hoveredTab === 'orders'
+                      ? `linear-gradient(135deg, ${colors.accent}15, ${colors.accent}25)`
+                      : 'transparent',
+                    transform: activeTab === 'orders' ? 'scale(1.05)' : hoveredTab === 'orders' ? 'scale(1.02)' : 'scale(1)'
+                  }}
+                >
+                  <Package className="h-5 w-5 relative z-10 transition-transform duration-300 group-hover:scale-110" />
+                  <span className="font-semibold relative z-10 transition-all duration-300 group-hover:tracking-wide">Order History</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Enhanced Error Message */}
         {error && (
-          <div className="mb-6 bg-red-50 border border-red-200 text-red-700 px-4 py-4 rounded-2xl flex items-center space-x-3 animate-fade-in">
+          <div className="mb-4 bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-xl flex items-center space-x-3 animate-fade-in">
             <AlertCircle className="h-5 w-5 flex-shrink-0" />
-            <div>
-              <p className="font-medium">Action Required</p>
-              <p className="text-sm mt-1">{error}</p>
+            <div className="flex-1">
+              <p className="font-medium text-sm">Action Required</p>
+              <p className="text-xs mt-1">{error}</p>
             </div>
             <button 
               onClick={() => setError(null)}
-              className="ml-auto p-1 hover:bg-red-100 rounded-lg transition-colors duration-200"
+              className="p-1 hover:bg-red-100 rounded-lg transition-colors duration-200"
             >
               <X className="h-4 w-4" />
             </button>
@@ -1027,800 +1568,1252 @@ const Orders = ({ socket }: { socket: Socket }) => {
 
         {/* Enhanced Success Message */}
         {successMessage && (
-          <div className="mb-6 bg-green-50 border border-green-200 text-green-800 px-4 py-4 rounded-2xl animate-slide-down">
+          <div className="mb-4 bg-green-50 border border-green-200 text-green-800 px-4 py-3 rounded-xl animate-slide-down">
             <div className="flex items-center space-x-3">
               <CheckCircle className="h-5 w-5 text-green-600 flex-shrink-0" />
               <div>
-                <p className="font-semibold text-green-900">{successMessage.title}</p>
-                <p className="text-green-700 text-sm mt-1">{successMessage.message}</p>
+                <p className="font-semibold text-green-900 text-sm">{successMessage.title}</p>
+                <p className="text-green-700 text-xs mt-1">{successMessage.message}</p>
               </div>
             </div>
           </div>
         )}
 
-        {/* Tab Content with Smooth Transitions */}
+        {/* Tab Content */}
         <div className={`transition-all duration-500 ease-in-out ${tabTransition ? 'opacity-0 scale-95' : 'opacity-100 scale-100'}`}>
           {activeTab === 'create' && (
-            <div className="space-y-8 animate-fade-in">
-              {/* Create Order Card */}
-              <div className="bg-white rounded-2xl shadow-xl border border-gray-200 overflow-hidden transition-all duration-300 hover:shadow-2xl">
-                <div 
-                  className="p-6 transition-all duration-500"
-                  style={{ backgroundColor: colors.primary }}
-                >
-                  <h2 className="text-2xl font-bold text-white flex items-center space-x-3">
-                    <Plus className="h-6 w-6" />
-                    <span>Create New Order</span>
-                  </h2>
-                </div>
-                
-                <div className="p-6">
-                  <form onSubmit={handleOrderSubmit} className="space-y-8">
-                    {/* Customer Selection */}
-                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                      <div className="space-y-4">
-                        <div>
-                          <label className="block text-sm font-semibold mb-3 text-gray-700">
-                            Search Customer
-                          </label>
-                          <div className="relative">
-                            <input
-                              type="text"
-                              value={searchQuery}
-                              onChange={handleSearch}
-                              placeholder="Search by name, email, or phone..."
-                              className={`w-full p-4 pl-12 border border-gray-300 rounded-xl bg-gray-50 ${inputFocusStyle}`}
-                            />
-                            <Search className="absolute left-4 top-4 h-4 w-4 text-gray-400" />
-                          </div>
-                          {searchQuery && filteredCustomers.length > 0 && (
-                            <div className="absolute z-10 w-full mt-2 bg-white border border-gray-200 rounded-xl shadow-2xl max-h-60 overflow-y-auto animate-scale-in">
-                              {filteredCustomers.map((customer) => (
-                                <div
-                                  key={customer._id}
-                                  onClick={() => handleCustomerSelect(customer)}
-                                  className="p-4 hover:bg-gray-50 cursor-pointer border-b border-gray-100 last:border-0 transition-all duration-200 hover:translate-x-1"
-                                >
-                                  <div className="font-medium text-gray-900">{customer.name}</div>
-                                  <div className="text-sm text-gray-600 flex items-center space-x-3 mt-1">
-                                    <Mail className="h-3 w-3" />
-                                    <span>{customer.email}</span>
-                                    <Phone className="h-3 w-3" />
-                                    <span>{customer.phone}</span>
-                                  </div>
-                                </div>
-                              ))}
-                            </div>
-                          )}
-                        </div>
-
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setIsEditMode(false);
-                            setCustomerFormData({ name: '', email: '', phone: '', address: '', pendingPayments: 0 });
-                            setShowCustomerModal(true);
-                          }}
-                          className="flex items-center space-x-3 text-white px-6 py-4 rounded-xl transition-all duration-300 shadow-lg hover:shadow-xl w-full justify-center transform hover:scale-105"
-                          style={{ backgroundColor: colors.secondary }}
-                        >
-                          <User className="h-5 w-5" />
-                          <span className="font-semibold">Add New Customer</span>
-                        </button>
-                      </div>
-
-                      {/* Customer Details Card */}
-                      <div 
-                        className="rounded-2xl p-6 border transition-all duration-300 hover:shadow-lg"
-                        style={{ 
-                          backgroundColor: `${colors.primary}08`,
-                          borderColor: `${colors.primary}30`
-                        }}
-                      >
-                        <h3 className="font-semibold text-lg mb-4 flex items-center space-x-2">
-                          <User className="h-5 w-5" style={{ color: colors.primary }} />
-                          <span className="text-gray-800">Customer Information</span>
-                        </h3>
-                        <div className="space-y-3">
-                          <div className="flex justify-between items-center p-3 bg-white rounded-lg border border-gray-200 transition-all duration-300 hover:shadow-md">
-                            <span className="font-medium text-gray-600">Name:</span>
-                            <span className="font-semibold text-gray-900">{orderFormData.customerName || 'Not selected'}</span>
-                          </div>
-                          <div className="flex justify-between items-center p-3 bg-white rounded-lg border border-gray-200 transition-all duration-300 hover:shadow-md">
-                            <span className="font-medium text-gray-600">Email:</span>
-                            <span className="text-gray-900">{orderFormData.customerEmail || '-'}</span>
-                          </div>
-                          <div className="flex justify-between items-center p-3 bg-white rounded-lg border border-gray-200 transition-all duration-300 hover:shadow-md">
-                            <span className="font-medium text-gray-600">Phone:</span>
-                            <span className="text-gray-900">{orderFormData.customerPhone || '-'}</span>
-                          </div>
-                          <div className="flex justify-between items-center p-3 bg-white rounded-lg border border-gray-200 transition-all duration-300 hover:shadow-md">
-                            <span className="font-medium text-gray-600">Pending Balance:</span>
-                            <span className="font-semibold text-orange-600">LKR {orderFormData.customerPendingPayments}</span>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Order Configuration */}
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                      <div>
-                        <label className="block text-sm font-semibold mb-3 text-gray-700">
-                          Payment Method
-                        </label>
-                        <div className="relative">
-                          <select
-                            value={orderFormData.paymentMethod}
-                            onChange={(e) => setOrderFormData({ ...orderFormData, paymentMethod: e.target.value })}
-                            className={`w-full p-4 border border-gray-300 rounded-xl bg-gray-50 appearance-none ${inputFocusStyle}`}
-                          >
-                            <option value="Cash">Cash</option>
-                            <option value="Debit Card">Debit Card</option>
-                            <option value="Credit Card">Credit Card</option>
-                            <option value="Bank Transfer">Bank Transfer</option>
-                            <option value="Other">Other</option>
-                          </select>
-                          <CreditCard className="absolute right-4 top-4 h-4 w-4 text-gray-400" />
-                        </div>
-                      </div>
-                      
-                      <div className="flex items-center space-x-3 p-4 bg-gray-50 rounded-xl border border-gray-200 transition-all duration-300 hover:shadow-md">
-                        <input
-                          type="checkbox"
-                          checked={orderFormData.personalized}
-                          onChange={(e) => setOrderFormData({ ...orderFormData, personalized: e.target.checked })}
-                          className="w-5 h-5 rounded focus:ring-2 focus:ring-blue-500 text-blue-600 transition-all duration-300"
-                          style={{ color: colors.primary }}
-                        />
-                        <label className="text-sm font-semibold text-gray-700">
-                          Personalized Product
-                        </label>
-                      </div>
-
-                      <div>
-                        <button
-                          type="button"
-                          onClick={() => setShowScanner(true)}
-                          className="flex items-center space-x-3 w-full text-white px-6 py-4 rounded-xl transition-all duration-300 shadow-lg hover:shadow-xl justify-center transform hover:scale-105"
-                          style={{ backgroundColor: colors.accent }}
-                        >
-                          <Scan className="h-5 w-5" />
-                          <span className="font-semibold">Scan Product</span>
-                        </button>
-                      </div>
-                    </div>
-
-                    {/* Order Items Section */}
-                    <div className="space-y-6">
-                      <div className="flex items-center justify-between">
-                        <h3 className="text-lg font-semibold flex items-center space-x-3 text-gray-800">
-                          <Package className="h-5 w-5" />
-                          <span>Order Items</span>
-                          <span 
-                            className="px-3 py-1 rounded-full text-sm font-medium transition-all duration-300"
-                            style={{ backgroundColor: `${colors.primary}15`, color: colors.primary }}
-                          >
-                            {orderFormData.items.length} items
-                          </span>
-                        </h3>
-                        <button
-                          type="button"
-                          onClick={addItem}
-                          className="flex items-center space-x-2 text-white px-4 py-3 rounded-xl transition-all duration-300 shadow-lg hover:shadow-xl transform hover:scale-105"
-                          style={{ backgroundColor: colors.success }}
-                        >
-                          <Plus className="h-4 w-4" />
-                          <span className="font-semibold">Add Item</span>
-                        </button>
-                      </div>
-
-                      {orderFormData.items.map((item, index) => (
-                        <div key={index} className="bg-gray-50 rounded-2xl p-6 border border-gray-200 hover:border-gray-300 transition-all duration-300 hover:shadow-lg">
-                          <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-end">
-                            <div className="lg:col-span-5 relative">
-                              <label className="block text-sm font-medium mb-2 text-gray-700">
-                                Product Name *
-                              </label>
-                              <div className="relative">
-                                <input
-                                  type="text"
-                                  value={item.productName}
-                                  onChange={(e) => handleProductSearch(index, e.target.value)}
-                                  onFocus={() => {
-                                    const newShow = [...showProductSuggestions];
-                                    newShow[index] = true;
-                                    setShowProductSuggestions(newShow);
-                                  }}
-                                  className={`w-full p-3 border border-gray-300 rounded-xl ${inputFocusStyle}`}
-                                  placeholder="Search or enter product name"
-                                  required
-                                />
-                                {loading.products && (
-                                  <div className="absolute right-3 top-3">
-                                    <div className="animate-spin rounded-full h-4 w-4 border-b-2" style={{ borderColor: colors.primary }}></div>
-                                  </div>
-                                )}
-                              </div>
-                              
-                              {/* Enhanced Product Suggestions */}
-                              {showProductSuggestions[index] && productSuggestions[index] && productSuggestions[index].length > 0 && (
-                                <div className="absolute z-20 w-full mt-1 bg-white border border-gray-200 rounded-xl shadow-2xl max-h-60 overflow-y-auto animate-scale-in">
-                                  {productSuggestions[index].map((product) => (
-                                    <div
-                                      key={product._id}
-                                      onClick={() => handleProductSelect(index, product)}
-                                      className="p-3 hover:bg-gray-50 cursor-pointer border-b border-gray-100 last:border-0 transition-all duration-200 hover:translate-x-1 flex justify-between items-center"
-                                    >
-                                      <div className="flex-1">
-                                        <div className="font-medium text-gray-900">{product.name}</div>
-                                        <div className="text-xs text-gray-500 flex items-center space-x-2 mt-1">
-                                          <span>ID: {product.productId}</span>
-                                          {product.barcode && (
-                                            <>
-                                              <span>•</span>
-                                              <span>Barcode: {product.barcode}</span>
-                                            </>
-                                          )}
-                                        </div>
-                                      </div>
-                                      <div className="text-right">
-                                        <div className="font-semibold text-green-600">LKR {product.unitPrice?.toLocaleString()}</div>
-                                        <div className="text-xs text-gray-500">
-                                          Stock: {product.quantity !== undefined ? product.quantity : 'N/A'}
-                                        </div>
-                                      </div>
-                                    </div>
-                                  ))}
-                                </div>
-                              )}
-
-                              {/* No products found message */}
-                              {showProductSuggestions[index] && 
-                              productSearchQuery[index] && 
-                              productSuggestions[index] && 
-                              productSuggestions[index].length === 0 && 
-                              !loading.products && (
-                                <div className="absolute z-20 w-full mt-1 bg-white border border-gray-200 rounded-xl shadow-lg p-4 text-center">
-                                  <div className="text-gray-500 text-sm">
-                                    <Package className="h-8 w-8 mx-auto mb-2 text-gray-300" />
-                                    <p>No products found</p>
-                                    <p className="text-xs mt-1">Try a different search term or add the product in Products page</p>
-                                  </div>
-                                </div>
-                              )}
-                            </div>
-                            
-                            <div className="lg:col-span-3">
-                              <label className="block text-sm font-medium mb-2 text-gray-700">
-                                Quantity *
-                              </label>
-                              <input
-                                type="number"
-                                value={item.quantity}
-                                onChange={(e) => {
-                                  const newItems = [...orderFormData.items];
-                                  newItems[index].quantity = e.target.value;
-                                  setOrderFormData({ ...orderFormData, items: newItems });
-                                }}
-                                className={`w-full p-3 border border-gray-300 rounded-xl ${inputFocusStyle}`}
-                                placeholder="0"
-                                min="1"
-                                required
-                              />
-                            </div>
-                            
-                            <div className="lg:col-span-3">
-                              <label className="block text-sm font-medium mb-2 text-gray-700">
-                                Unit Price (LKR) *
-                              </label>
-                              <input
-                                type="number"
-                                value={item.unitPrice}
-                                onChange={(e) => {
-                                  const newItems = [...orderFormData.items];
-                                  newItems[index].unitPrice = e.target.value;
-                                  setOrderFormData({ ...orderFormData, items: newItems });
-                                }}
-                                className={`w-full p-3 border border-gray-300 rounded-xl ${inputFocusStyle}`}
-                                placeholder="0.00"
-                                min="0"
-                                step="0.01"
-                                required
-                              />
-                            </div>
-                            
-                            <div className="lg:col-span-1">
-                              <button
-                                type="button"
-                                onClick={() => removeItem(index)}
-                                className="w-full flex items-center justify-center space-x-2 bg-red-500 text-white p-3 rounded-xl hover:bg-red-600 transition-all duration-300 shadow-lg hover:shadow-xl transform hover:scale-105"
-                                disabled={orderFormData.items.length <= 1}
-                              >
-                                <Trash2 className="h-4 w-4" />
-                              </button>
-                            </div>
-                          </div>
-                          
-                          {/* Item Total */}
-                          {item.quantity && item.unitPrice && Number(item.quantity) > 0 && Number(item.unitPrice) > 0 && (
-                            <div className="mt-3 p-3 bg-white rounded-lg border border-green-200 transition-all duration-300 hover:shadow-md">
-                              <div className="flex justify-between items-center text-sm">
-                                <span className="text-gray-600">Item Total:</span>
-                                <span className="font-semibold text-green-600">
-                                  LKR {(Number(item.quantity) * Number(item.unitPrice)).toLocaleString()}
-                                </span>
-                              </div>
-                            </div>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-
-                    {/* Enhanced Totals and Submit Section */}
-                    <div 
-                      className="rounded-2xl p-8 border transition-all duration-300 hover:shadow-xl"
-                      style={{ 
-                        backgroundColor: `${colors.primary}05`,
-                        borderColor: `${colors.primary}20`
-                      }}
-                    >
-                      <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
-                        <div className="text-center p-4 bg-white rounded-xl border border-gray-200 shadow-sm transition-all duration-300 hover:shadow-md">
-                          <div className="text-sm font-medium text-gray-600">Items Total</div>
-                          <div className="text-2xl font-bold mt-2 text-gray-800">
-                            LKR {currentTotal.toLocaleString()}
-                          </div>
-                        </div>
-                        <div className="text-center p-4 bg-white rounded-xl border border-gray-200 shadow-sm transition-all duration-300 hover:shadow-md">
-                          <div className="text-sm font-medium text-gray-600">Pending Balance</div>
-                          <div className="text-2xl font-bold mt-2 text-orange-600">
-                            LKR {orderFormData.customerPendingPayments.toLocaleString()}
-                          </div>
-                        </div>
-                        <div className="text-center p-4 bg-white rounded-xl border border-gray-200 shadow-sm transition-all duration-300 hover:shadow-md">
-                          <div className="text-sm font-medium text-gray-600">Items Count</div>
-                          <div className="text-2xl font-bold mt-2" style={{ color: colors.primary }}>
-                            {orderFormData.items.filter(item => item.productName).length}
-                          </div>
-                        </div>
-                        <div 
-                          className="text-center p-4 rounded-xl border shadow-lg transition-all duration-300 hover:shadow-xl"
-                          style={{ 
-                            backgroundColor: colors.primary,
-                            borderColor: colors.primary
-                          }}
-                        >
-                          <div className="text-sm font-medium text-white">Grand Total</div>
-                          <div className="text-2xl font-bold mt-2 text-white">
-                            LKR {grandTotal.toLocaleString()}
-                          </div>
-                        </div>
-                      </div>
-
-                      <div className="flex flex-col sm:flex-row gap-4 justify-center">
-                        <button
-                          type="submit"
-                          disabled={!orderFormData.customerId || orderFormData.items.length === 0}
-                          className="flex items-center space-x-3 text-white px-8 py-4 rounded-xl transition-all duration-300 shadow-2xl hover:shadow-3xl transform hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none disabled:hover:shadow-2xl"
-                          style={{ backgroundColor: colors.success }}
-                        >
-                          <CheckCircle className="h-5 w-5" />
-                          <span className="font-semibold text-lg">Create Order</span>
-                        </button>
-                      </div>
-                    </div>
-                  </form>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {activeTab === 'customers' && (
-            <div className="space-y-8 animate-fade-in">
-              {/* Customer Management Section */}
-              <div className="bg-white rounded-2xl shadow-xl border border-gray-200 overflow-hidden transition-all duration-300 hover:shadow-2xl">
-                <div 
-                  className="p-6 transition-all duration-500"
-                  style={{ backgroundColor: colors.secondary }}
-                >
-                  <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between space-y-4 lg:space-y-0">
-                    <h2 className="text-2xl font-bold text-white flex items-center space-x-3">
-                      <User className="h-6 w-6" />
-                      <span>Customer Management</span>
-                      <span className="bg-white/20 px-3 py-1 rounded-full text-sm">
-                        {customers.length} customers
-                      </span>
-                    </h2>
-                    
-                    <div className="flex items-center space-x-4">
+            <div className="space-y-6 animate-fade-in">
+              {/* Mobile Create Order */}
+              {isMobile ? (
+                <div className="space-y-4">
+                  {/* Customer Selection */}
+                  <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-200">
+                    <h3 className="font-semibold mb-3 text-gray-800">Customer Selection</h3>
+                    <div className="space-y-3">
                       <div className="relative">
-                        <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                          <Search className="h-4 w-4 text-gray-400" />
-                        </div>
+                        <Search className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
                         <input
                           type="text"
-                          placeholder="Search customers..."
                           value={searchQuery}
-                          onChange={(e) => setSearchQuery(e.target.value)}
-                          className={`pl-10 pr-4 py-2 border border-gray-300 rounded-xl w-full lg:w-64 ${inputFocusStyle}`}
+                          onChange={handleSearch}
+                          placeholder="Search customers..."
+                          className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg bg-gray-50"
                         />
                       </div>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="p-6">
-                  {loading.customers ? (
-                    <div className="flex justify-center items-center py-12">
-                      <div 
-                        className="animate-spin rounded-full h-12 w-12 border-b-2 transition-all duration-500"
-                        style={{ borderColor: colors.secondary }}
-                      ></div>
-                    </div>
-                  ) : customers.length === 0 ? (
-                    <div className="text-center py-12">
-                      <User className="h-16 w-16 text-gray-300 mx-auto mb-4" />
-                      <h3 className="text-lg font-semibold text-gray-600 mb-2">No customers found</h3>
-                      <p className="text-gray-500 mb-6">Start by adding your first customer</p>
+                      
                       <button
                         onClick={() => {
                           setIsEditMode(false);
                           setCustomerFormData({ name: '', email: '', phone: '', address: '', pendingPayments: 0 });
                           setShowCustomerModal(true);
-                          handleTabChange('create');
                         }}
-                        className="flex items-center space-x-2 text-white px-6 py-3 rounded-xl transition-all duration-300 shadow-lg hover:shadow-xl mx-auto transform hover:scale-105"
-                        style={{ backgroundColor: colors.primary }}
+                        className="flex items-center justify-center space-x-2 text-white w-full py-3 rounded-lg transition-all duration-300"
+                        style={{ backgroundColor: colors.secondary }}
                       >
-                        <Plus className="h-4 w-4" />
-                        <span>Add First Customer</span>
+                        <User className="h-4 w-4" />
+                        <span className="font-semibold">Add New Customer</span>
                       </button>
                     </div>
-                  ) : (
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                      {customers
-                        .filter(customer => 
-                          customer.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                          customer.email.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                          customer.phone.includes(searchQuery)
-                        )
-                        .map((customer) => (
-                        <div 
-                          key={customer._id} 
-                          className="bg-white rounded-xl border border-gray-200 hover:shadow-lg transition-all duration-300 hover:scale-105 overflow-hidden group"
+
+                    {/* Selected Customer Info */}
+                    {orderFormData.customerName && (
+                      <div className="mt-4 p-3 bg-blue-50 rounded-lg border border-blue-200">
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <div className="font-semibold text-blue-900">{orderFormData.customerName}</div>
+                            <div className="text-sm text-blue-700">{orderFormData.customerPhone}</div>
+                          </div>
+                          <button
+                            onClick={() => {
+                              setOrderFormData({
+                                ...orderFormData,
+                                customerId: '',
+                                customerName: '',
+                                customerEmail: '',
+                                customerPhone: '',
+                                customerAddress: '',
+                                customerPendingPayments: 0,
+                              });
+                            }}
+                            className="p-1 hover:bg-blue-100 rounded"
+                          >
+                            <X className="h-4 w-4 text-blue-600" />
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Order Configuration */}
+                  <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-200">
+                    <h3 className="font-semibold mb-3 text-gray-800">Order Settings</h3>
+                    <div className="space-y-3">
+                      <div>
+                        <label className="block text-sm font-medium mb-2 text-gray-700">
+                          Payment Method
+                        </label>
+                        <select
+                          value={orderFormData.paymentMethod}
+                          onChange={(e) => setOrderFormData({ ...orderFormData, paymentMethod: e.target.value })}
+                          className="w-full p-3 border border-gray-300 rounded-lg bg-gray-50"
                         >
-                          <div className="p-6">
-                            <div className="flex items-start justify-between mb-4">
+                          <option value="Cash">Cash</option>
+                          <option value="Debit Card">Debit Card</option>
+                          <option value="Credit Card">Credit Card</option>
+                          <option value="Bank Transfer">Bank Transfer</option>
+                          <option value="Other">Other</option>
+                        </select>
+                      </div>
+                      
+                      <div className="flex items-center space-x-3">
+                        <input
+                          type="checkbox"
+                          checked={orderFormData.personalized}
+                          onChange={(e) => setOrderFormData({ ...orderFormData, personalized: e.target.checked })}
+                          className="w-5 h-5 rounded focus:ring-2 focus:ring-blue-500 text-blue-600"
+                        />
+                        <label className="text-sm font-medium text-gray-700">
+                          Personalized Product
+                        </label>
+                      </div>
+
+                      <button
+                        onClick={() => setShowScanner(true)}
+                        className="flex items-center justify-center space-x-2 w-full text-white py-3 rounded-lg transition-all duration-300"
+                        style={{ backgroundColor: colors.accent }}
+                      >
+                        <Scan className="h-4 w-4" />
+                        <span className="font-semibold">Scan Product</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Order Items */}
+                  <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-200">
+                    <div className="flex justify-between items-center mb-4">
+                      <h3 className="font-semibold text-gray-800">Order Items</h3>
+                      <button
+                        onClick={addItem}
+                        className="flex items-center space-x-1 text-white px-3 py-2 rounded-lg text-sm"
+                        style={{ backgroundColor: colors.success }}
+                      >
+                        <Plus className="h-3 w-3" />
+                        <span>Add Item</span>
+                      </button>
+                    </div>
+
+                    <div className="space-y-4">
+                      {orderFormData.items.map((item, index) => (
+                        <div key={index} className="border border-gray-200 rounded-lg p-4 bg-gray-50">
+                          <div className="space-y-3">
+                            <div>
+                              <label className="block text-sm font-medium mb-1 text-gray-700">
+                                Product Name
+                              </label>
+                              <input
+                                type="text"
+                                value={item.productName}
+                                onChange={(e) => handleProductSearch(index, e.target.value)}
+                                className="w-full p-3 border border-gray-300 rounded-lg bg-white"
+                                placeholder="Enter product name"
+                                required
+                              />
+                            </div>
+                            
+                            <div className="grid grid-cols-2 gap-3">
                               <div>
-                                <h3 className="font-semibold text-lg text-gray-900 group-hover:text-blue-600 transition-colors duration-300">
-                                  {customer.name}
-                                </h3>
-                                <p className="text-sm text-gray-500 mt-1 transition-colors duration-300 group-hover:text-gray-600">
-                                  {customer.address}
-                                </p>
+                                <label className="block text-sm font-medium mb-1 text-gray-700">
+                                  Quantity
+                                </label>
+                                <input
+                                  type="number"
+                                  value={item.quantity}
+                                  onChange={(e) => {
+                                    const newItems = [...orderFormData.items];
+                                    newItems[index].quantity = e.target.value;
+                                    setOrderFormData({ ...orderFormData, items: newItems });
+                                  }}
+                                  className="w-full p-3 border border-gray-300 rounded-lg bg-white"
+                                  placeholder="0"
+                                  min="1"
+                                  required
+                                />
                               </div>
-                              <div className="flex items-center space-x-1">
-                                <span className={`px-2 py-1 rounded-full text-xs font-medium transition-all duration-300 group-hover:scale-110 ${
-                                  customer.pendingPayments > 0 ? 'bg-orange-100 text-orange-800' : 'bg-green-100 text-green-800'
-                                }`}>
-                                  {customer.pendingPayments > 0 ? 'Pending' : 'Clear'}
-                                </span>
+                              
+                              <div>
+                                <label className="block text-sm font-medium mb-1 text-gray-700">
+                                  Unit Price
+                                </label>
+                                <input
+                                  type="number"
+                                  value={item.unitPrice}
+                                  onChange={(e) => {
+                                    const newItems = [...orderFormData.items];
+                                    newItems[index].unitPrice = e.target.value;
+                                    setOrderFormData({ ...orderFormData, items: newItems });
+                                  }}
+                                  className="w-full p-3 border border-gray-300 rounded-lg bg-white"
+                                  placeholder="0.00"
+                                  min="0"
+                                  step="0.01"
+                                  required
+                                />
                               </div>
                             </div>
                             
-                            <div className="space-y-2 mb-4">
-                              <div className="flex items-center space-x-2 text-sm text-gray-600 transition-colors duration-300 group-hover:text-gray-700">
-                                <Mail className="h-3 w-3" />
-                                <span className="truncate">{customer.email}</span>
+                            {item.quantity && item.unitPrice && Number(item.quantity) > 0 && Number(item.unitPrice) > 0 && (
+                              <div className="p-2 bg-green-50 rounded border border-green-200">
+                                <div className="flex justify-between text-sm">
+                                  <span className="text-green-800">Item Total:</span>
+                                  <span className="font-semibold text-green-900">
+                                    LKR {(Number(item.quantity) * Number(item.unitPrice)).toLocaleString()}
+                                  </span>
+                                </div>
                               </div>
-                              <div className="flex items-center space-x-2 text-sm text-gray-600 transition-colors duration-300 group-hover:text-gray-700">
-                                <Phone className="h-3 w-3" />
-                                <span>{customer.phone}</span>
-                              </div>
-                              <div className="flex items-center space-x-2 text-sm transition-colors duration-300 group-hover:text-orange-700">
-                                <DollarSign className="h-3 w-3 text-orange-500" />
-                                <span className="font-semibold text-orange-600">
-                                  LKR {customer.pendingPayments.toLocaleString()}
-                                </span>
-                              </div>
-                            </div>
+                            )}
                             
-                            <div className="flex items-center space-x-2 pt-4 border-t border-gray-100">
-                              <button
-                                onClick={() => generateCustomerInvoices(customer._id)}
-                                className="flex items-center space-x-1 bg-blue-500 text-white px-3 py-2 rounded-lg hover:bg-blue-600 transition-all duration-300 text-sm flex-1 justify-center transform hover:scale-105"
-                              >
-                                <Download className="h-3 w-3" />
-                                <span>Invoices</span>
-                              </button>
-                              <button
-                                onClick={() => handleEditCustomer(customer)}
-                                className="flex items-center space-x-1 text-white px-3 py-2 rounded-lg hover:bg-blue-600 transition-all duration-300 text-sm transform hover:scale-105"
-                                style={{ backgroundColor: colors.secondary }}
-                              >
-                                <Edit className="h-3 w-3" />
-                              </button>
-                              <button
-                                onClick={() => handleDeleteCustomer(customer._id)}
-                                className="flex items-center space-x-1 bg-red-500 text-white px-3 py-2 rounded-lg hover:bg-red-600 transition-all duration-300 text-sm transform hover:scale-105"
-                              >
-                                <Trash2 className="h-3 w-3" />
-                              </button>
-                            </div>
+                            <button
+                              onClick={() => removeItem(index)}
+                              disabled={orderFormData.items.length <= 1}
+                              className="w-full bg-red-500 text-white py-2 rounded-lg disabled:bg-gray-300 transition-colors"
+                            >
+                              Remove Item
+                            </button>
                           </div>
                         </div>
                       ))}
                     </div>
-                  )}
-                </div>
-              </div>
-            </div>
-          )}
+                  </div>
 
-{activeTab === 'orders' && (
-  <div className="space-y-8 animate-fade-in">
-    {/* Orders Statistics */}
-    <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-      <div className="bg-white rounded-2xl p-6 border border-gray-200 shadow-sm transition-all duration-300 hover:shadow-lg hover:scale-105">
-        <div className="flex items-center justify-between">
-          <div>
-            <p className="text-sm font-medium text-gray-600">Total Orders</p>
-            <p className="text-2xl font-bold mt-1" style={{ color: colors.primary }}>{orderStats.total}</p>
-          </div>
-          <div 
-            className="p-3 rounded-xl transition-all duration-300 hover:scale-110"
-            style={{ backgroundColor: `${colors.primary}15` }}
-          >
-            <ShoppingCart className="h-6 w-6" style={{ color: colors.primary }} />
-          </div>
-        </div>
-      </div>
-      
-      <div className="bg-white rounded-2xl p-6 border border-gray-200 shadow-sm transition-all duration-300 hover:shadow-lg hover:scale-105">
-        <div className="flex items-center justify-between">
-          <div>
-            <p className="text-sm font-medium text-gray-600">Completed</p>
-            <p className="text-2xl font-bold mt-1 text-green-600">{orderStats.completed}</p>
-          </div>
-          <div className="p-3 rounded-xl bg-green-50 transition-all duration-300 hover:scale-110">
-            <CheckCircle className="h-6 w-6 text-green-600" />
-          </div>
-        </div>
-      </div>
-      
-      <div className="bg-white rounded-2xl p-6 border border-gray-200 shadow-sm transition-all duration-300 hover:shadow-lg hover:scale-105">
-        <div className="flex items-center justify-between">
-          <div>
-            <p className="text-sm font-medium text-gray-600">Pending</p>
-            <p className="text-2xl font-bold mt-1 text-orange-600">{orderStats.pending}</p>
-          </div>
-          <div className="p-3 rounded-xl bg-orange-50 transition-all duration-300 hover:scale-110">
-            <Clock className="h-6 w-6 text-orange-600" />
-          </div>
-        </div>
-      </div>
-      
-      <div className="bg-white rounded-2xl p-6 border border-gray-200 shadow-sm transition-all duration-300 hover:shadow-lg hover:scale-105">
-        <div className="flex items-center justify-between">
-          <div>
-            <p className="text-sm font-medium text-gray-600">Total Revenue</p>
-            <p className="text-2xl font-bold mt-1 text-green-600">LKR {orderStats.revenue.toLocaleString()}</p>
-          </div>
-          <div 
-            className="p-3 rounded-xl transition-all duration-300 hover:scale-110"
-            style={{ backgroundColor: `${colors.accent}15` }}
-          >
-            <PieChart className="h-6 w-6" style={{ color: colors.accent }} />
-          </div>
-        </div>
-      </div>
-    </div>
-
-    {/* Orders List */}
-    <div className="bg-white rounded-2xl shadow-xl border border-gray-200 overflow-hidden transition-all duration-300 hover:shadow-2xl">
-      <div 
-        className="p-6 transition-all duration-500"
-        style={{ backgroundColor: colors.accent }}
-      >
-        <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between space-y-4 lg:space-y-0">
-          <h2 className="text-2xl font-bold text-white flex items-center space-x-3">
-            <Package className="h-6 w-6" />
-            <span>Order History</span>
-            <span className="bg-white/20 px-3 py-1 rounded-full text-sm">
-              {orders.length} orders
-            </span>
-          </h2>
-          
-          <div className="flex items-center space-x-4">
-            <button
-              onClick={() => setShowHiddenOrders(!showHiddenOrders)}
-              className={`flex items-center space-x-2 px-4 py-2 rounded-xl transition-all duration-300 ${
-                showHiddenOrders 
-                  ? 'bg-white text-teal-700 shadow-lg transform scale-105' 
-                  : 'bg-white/20 text-white hover:bg-white/30 hover:scale-105'
-              }`}
-              style={{ color: showHiddenOrders ? colors.accent : 'white' }}
-            >
-              {showHiddenOrders ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-              <span>{showHiddenOrders ? 'Hide Personalized' : 'Show Personalized'}</span>
-            </button>
-          </div>
-        </div>
-      </div>
-
-      <div className="p-6">
-        {loading.orders ? (
-          <div className="flex justify-center items-center py-12">
-            <div 
-              className="animate-spin rounded-full h-12 w-12 border-b-2 transition-all duration-500"
-              style={{ borderColor: colors.accent }}
-            ></div>
-          </div>
-        ) : orders.length === 0 ? (
-          <div className="text-center py-12">
-            <Package className="h-16 w-16 text-gray-300 mx-auto mb-4" />
-            <h3 className="text-lg font-semibold text-gray-600 mb-2">No orders found</h3>
-            <p className="text-gray-500">Create your first order to get started</p>
-          </div>
-        ) : (
-          <div className="space-y-4">
-            {(showHiddenOrders ? orders : regularOrders).map((order) => (
-              <div 
-                key={order._id} 
-                className={`rounded-xl border transition-all duration-300 overflow-hidden hover:shadow-lg hover:scale-102 ${
-                  order.personalized 
-                    ? 'border-orange-200 bg-orange-50 hover:bg-orange-100' 
-                    : 'border-gray-200 bg-white hover:bg-gray-50'
-                }`}
-              >
-                <div className="p-6">
-                  <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between space-y-4 lg:space-y-0">
-                    <div className="flex-1">
-                      <div className="flex items-start justify-between mb-3">
-                        <div>
-                          <h3 className="font-semibold text-gray-900 flex items-center space-x-2 group-hover:text-blue-600 transition-colors duration-300">
-                            <span>Order #{order._id.slice(-8)}</span>
-                            {order.personalized && (
-                              <span className="bg-orange-100 text-orange-800 px-2 py-1 rounded-full text-xs font-medium border border-orange-200 transition-all duration-300 group-hover:bg-orange-200 group-hover:scale-105">
-                                Personalized
-                              </span>
-                            )}
-                            <span className={`px-2 py-1 rounded-full text-xs font-medium border transition-all duration-300 group-hover:scale-105 ${getStatusColor(order.status)}`}>
-                              {order.status}
-                            </span>
-                          </h3>
-                          <p className="text-sm text-gray-600 mt-1 transition-colors duration-300 group-hover:text-gray-700">
-                            {order.customer ? order.customer.name : 'Unknown Customer'} • {formatDate(order.createdAt)}
-                          </p>
-                        </div>
-                        <button
-                          onClick={() => setExpandedOrder(expandedOrder === order._id ? null : order._id)}
-                          className="flex items-center space-x-1 text-gray-500 hover:text-gray-700 transition-all duration-300 transform hover:scale-110"
-                        >
-                          {expandedOrder === order._id ? (
-                            <ChevronUp className="h-4 w-4" />
-                          ) : (
-                            <ChevronDown className="h-4 w-4" />
-                          )}
-                        </button>
+                  {/* Order Summary */}
+                  <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-200">
+                    <h3 className="font-semibold mb-4 text-gray-800">Order Summary</h3>
+                    <div className="space-y-3">
+                      <div className="flex justify-between">
+                        <span className="text-gray-600">Items Total:</span>
+                        <span className="font-semibold">LKR {currentTotal.toLocaleString()}</span>
                       </div>
-                      
-                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
-                        <div className="text-center p-3 bg-gray-100 rounded-lg transition-all duration-300 hover:bg-white hover:shadow-md">
-                          <div className="text-sm text-gray-600">Items</div>
-                          <div className="font-semibold text-gray-900">{order.items.length}</div>
-                        </div>
-                        <div className="text-center p-3 bg-gray-100 rounded-lg transition-all duration-300 hover:bg-white hover:shadow-md">
-                          <div className="text-sm text-gray-600">Order Total</div>
-                          <div className="font-semibold text-green-600">LKR {order.totalAmount.toLocaleString()}</div>
-                        </div>
-                        <div className="text-center p-3 bg-gray-100 rounded-lg transition-all duration-300 hover:bg-white hover:shadow-md">
-                          <div className="text-sm text-gray-600">Pending</div>
-                          <div className="font-semibold text-orange-600">LKR {order.pendingPayments.toLocaleString()}</div>
-                        </div>
+                      <div className="flex justify-between">
+                        <span className="text-gray-600">Pending Balance:</span>
+                        <span className="font-semibold text-orange-600">
+                          LKR {orderFormData.customerPendingPayments.toLocaleString()}
+                        </span>
+                      </div>
+                      <div className="flex justify-between text-lg font-bold pt-3 border-t border-gray-200">
+                        <span>Grand Total:</span>
+                        <span style={{ color: colors.primary }}>
+                          LKR {grandTotal.toLocaleString()}
+                        </span>
                       </div>
                     </div>
                     
-                    <div className="flex flex-col sm:flex-row gap-2">
+                    <button
+                      onClick={handleOrderSubmit}
+                      disabled={!orderFormData.customerId || orderFormData.items.length === 0}
+                      className="w-full mt-4 text-white py-3 rounded-lg disabled:bg-gray-300 transition-all duration-300 font-semibold"
+                      style={{ backgroundColor: colors.success }}
+                    >
+                      Create Order
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                /* Desktop Create Order */
+                <div className="space-y-8">
+                  <div className="bg-white rounded-2xl shadow-xl border border-gray-200 overflow-hidden transition-all duration-300 hover:shadow-2xl">
+                    <div 
+                      className="p-6 transition-all duration-500"
+                      style={{ backgroundColor: colors.primary }}
+                    >
+                      <h2 className="text-2xl font-bold text-white flex items-center space-x-3">
+                        <Plus className="h-6 w-6" />
+                        <span>Create New Order</span>
+                      </h2>
+                    </div>
+                    
+                    <div className="p-6">
+                      <form onSubmit={handleOrderSubmit} className="space-y-8">
+                        {/* Customer Selection */}
+                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                          <div className="space-y-4">
+                            <div>
+                              <label className="block text-sm font-semibold mb-3 text-gray-700">
+                                Search Customer
+                              </label>
+                              <div className="relative">
+                                <input
+                                  type="text"
+                                  value={searchQuery}
+                                  onChange={handleSearch}
+                                  placeholder="Search by name, email, or phone..."
+                                  className={`w-full p-4 pl-12 border border-gray-300 rounded-xl bg-gray-50 ${inputFocusStyle}`}
+                                />
+                                <Search className="absolute left-4 top-4 h-4 w-4 text-gray-400" />
+                              </div>
+                              {searchQuery && filteredCustomers.length > 0 && (
+                                <div className="absolute z-10 w-full mt-2 bg-white border border-gray-200 rounded-xl shadow-2xl max-h-60 overflow-y-auto animate-scale-in">
+                                  {filteredCustomers.map((customer) => (
+                                    <div
+                                      key={customer._id}
+                                      onClick={() => handleCustomerSelect(customer)}
+                                      className="p-4 hover:bg-gray-50 cursor-pointer border-b border-gray-100 last:border-0 transition-all duration-200 hover:translate-x-1"
+                                    >
+                                      <div className="font-medium text-gray-900">{customer.name}</div>
+                                      <div className="text-sm text-gray-600 flex items-center space-x-3 mt-1">
+                                        <Mail className="h-3 w-3" />
+                                        <span>{customer.email}</span>
+                                        <Phone className="h-3 w-3" />
+                                        <span>{customer.phone}</span>
+                                      </div>
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setIsEditMode(false);
+                                setCustomerFormData({ name: '', email: '', phone: '', address: '', pendingPayments: 0 });
+                                setShowCustomerModal(true);
+                              }}
+                              className="flex items-center space-x-3 text-white px-6 py-4 rounded-xl transition-all duration-300 shadow-lg hover:shadow-xl w-full justify-center transform hover:scale-105"
+                              style={{ backgroundColor: colors.secondary }}
+                            >
+                              <User className="h-5 w-5" />
+                              <span className="font-semibold">Add New Customer</span>
+                            </button>
+                          </div>
+
+                          {/* Customer Details Card */}
+                          <div 
+                            className="rounded-2xl p-6 border transition-all duration-300 hover:shadow-lg"
+                            style={{ 
+                              backgroundColor: `${colors.primary}08`,
+                              borderColor: `${colors.primary}30`
+                            }}
+                          >
+                            <h3 className="font-semibold text-lg mb-4 flex items-center space-x-2">
+                              <User className="h-5 w-5" style={{ color: colors.primary }} />
+                              <span className="text-gray-800">Customer Information</span>
+                            </h3>
+                            <div className="space-y-3">
+                              <div className="flex justify-between items-center p-3 bg-white rounded-lg border border-gray-200 transition-all duration-300 hover:shadow-md">
+                                <span className="font-medium text-gray-600">Name:</span>
+                                <span className="font-semibold text-gray-900">{orderFormData.customerName || 'Not selected'}</span>
+                              </div>
+                              <div className="flex justify-between items-center p-3 bg-white rounded-lg border border-gray-200 transition-all duration-300 hover:shadow-md">
+                                <span className="font-medium text-gray-600">Email:</span>
+                                <span className="text-gray-900">{orderFormData.customerEmail || '-'}</span>
+                              </div>
+                              <div className="flex justify-between items-center p-3 bg-white rounded-lg border border-gray-200 transition-all duration-300 hover:shadow-md">
+                                <span className="font-medium text-gray-600">Phone:</span>
+                                <span className="text-gray-900">{orderFormData.customerPhone || '-'}</span>
+                              </div>
+                              <div className="flex justify-between items-center p-3 bg-white rounded-lg border border-gray-200 transition-all duration-300 hover:shadow-md">
+                                <span className="font-medium text-gray-600">Pending Balance:</span>
+                                <span className="font-semibold text-orange-600">LKR {orderFormData.customerPendingPayments}</span>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Order Configuration */}
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                          <div>
+                            <label className="block text-sm font-semibold mb-3 text-gray-700">
+                              Payment Method
+                            </label>
+                            <div className="relative">
+                              <select
+                                value={orderFormData.paymentMethod}
+                                onChange={(e) => setOrderFormData({ ...orderFormData, paymentMethod: e.target.value })}
+                                className={`w-full p-4 border border-gray-300 rounded-xl bg-gray-50 appearance-none ${inputFocusStyle}`}
+                              >
+                                <option value="Cash">Cash</option>
+                                <option value="Debit Card">Debit Card</option>
+                                <option value="Credit Card">Credit Card</option>
+                                <option value="Bank Transfer">Bank Transfer</option>
+                                <option value="Other">Other</option>
+                              </select>
+                              <CreditCard className="absolute right-4 top-4 h-4 w-4 text-gray-400" />
+                            </div>
+                          </div>
+                          
+                          <div className="flex items-center space-x-3 p-4 bg-gray-50 rounded-xl border border-gray-200 transition-all duration-300 hover:shadow-md">
+                            <input
+                              type="checkbox"
+                              checked={orderFormData.personalized}
+                              onChange={(e) => setOrderFormData({ ...orderFormData, personalized: e.target.checked })}
+                              className="w-5 h-5 rounded focus:ring-2 focus:ring-blue-500 text-blue-600 transition-all duration-300"
+                              style={{ color: colors.primary }}
+                            />
+                            <label className="text-sm font-semibold text-gray-700">
+                              Personalized Product
+                            </label>
+                          </div>
+
+                          <div>
+                            <button
+                              type="button"
+                              onClick={() => setShowScanner(true)}
+                              className="flex items-center space-x-3 w-full text-white px-6 py-4 rounded-xl transition-all duration-300 shadow-lg hover:shadow-xl justify-center transform hover:scale-105"
+                              style={{ backgroundColor: colors.accent }}
+                            >
+                              <Scan className="h-5 w-5" />
+                              <span className="font-semibold">Scan Product</span>
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* Order Items Section */}
+                        <div className="space-y-6">
+                          <div className="flex items-center justify-between">
+                            <h3 className="text-lg font-semibold flex items-center space-x-3 text-gray-800">
+                              <Package className="h-5 w-5" />
+                              <span>Order Items</span>
+                              <span 
+                                className="px-3 py-1 rounded-full text-sm font-medium transition-all duration-300"
+                                style={{ backgroundColor: `${colors.primary}15`, color: colors.primary }}
+                              >
+                                {orderFormData.items.length} items
+                              </span>
+                            </h3>
+                            <button
+                              type="button"
+                              onClick={addItem}
+                              className="flex items-center space-x-2 text-white px-4 py-3 rounded-xl transition-all duration-300 shadow-lg hover:shadow-xl transform hover:scale-105"
+                              style={{ backgroundColor: colors.success }}
+                            >
+                              <Plus className="h-4 w-4" />
+                              <span className="font-semibold">Add Item</span>
+                            </button>
+                          </div>
+
+                          {orderFormData.items.map((item, index) => (
+                            <div key={index} className="bg-gray-50 rounded-2xl p-6 border border-gray-200 hover:border-gray-300 transition-all duration-300 hover:shadow-lg">
+                              <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-end">
+                                <div className="lg:col-span-5 relative">
+                                  <label className="block text-sm font-medium mb-2 text-gray-700">
+                                    Product Name *
+                                  </label>
+                                  <div className="relative">
+                                    <input
+                                      type="text"
+                                      value={item.productName}
+                                      onChange={(e) => handleProductSearch(index, e.target.value)}
+                                      onFocus={() => {
+                                        const newShow = [...showProductSuggestions];
+                                        newShow[index] = true;
+                                        setShowProductSuggestions(newShow);
+                                      }}
+                                      className={`w-full p-3 border border-gray-300 rounded-xl ${inputFocusStyle}`}
+                                      placeholder="Search or enter product name"
+                                      required
+                                    />
+                                    {loading.products && (
+                                      <div className="absolute right-3 top-3">
+                                        <div className="animate-spin rounded-full h-4 w-4 border-b-2" style={{ borderColor: colors.primary }}></div>
+                                      </div>
+                                    )}
+                                  </div>
+                                  
+                                  {/* Enhanced Product Suggestions with Stock Info */}
+                                  {showProductSuggestions[index] && productSuggestions[index] && productSuggestions[index].length > 0 && (
+                                    <div className="absolute z-20 w-full mt-1 bg-white border border-gray-200 rounded-xl shadow-2xl max-h-60 overflow-y-auto animate-scale-in">
+                                      {productSuggestions[index].map((product: any) => {
+                                        // support both full product objects and flattened variant objects
+                                        const isVariant = !!(product && product.rawProduct);
+                                        const displayName = isVariant ? product.displayName : (product.name || product.productType || 'Product');
+                                        const pid = isVariant ? product.productId : (product._id || product.productId);
+                                        const unit = isVariant ? product.size : (product.unit || '');
+                                        const barcode = isVariant ? product.barcode : (product.barcode || '');
+                                        const price = isVariant ? product.price : (product.unitPrice || 0);
+                                        const qty = isVariant ? product.stock : (product.quantity || 0);
+                                        const stockStatus = getStockStatus(isVariant ? { quantity: qty, lowStockThreshold: 10 } : (product as any));
+                                        return (
+                                          <div
+                                            key={isVariant ? `${pid}_${product.variantIndex}` : (product._id || pid)}
+                                            onClick={() => isVariant ? handleVariantSelect(index, product) : handleProductSelect(index, product)}
+                                            className="p-3 hover:bg-gray-50 cursor-pointer border-b border-gray-100 last:border-0 transition-all duration-200 hover:translate-x-1 flex justify-between items-center"
+                                          >
+                                            <div className="flex-1">
+                                              <div className="font-medium text-gray-900">{displayName}</div>
+                                              <div className="text-xs text-gray-500 flex items-center space-x-2 mt-1">
+                                                <span>ID: {pid}</span>
+                                                {unit && (
+                                                  <>
+                                                    <span>•</span>
+                                                    <span className="flex items-center">
+                                                      <Layers className="h-3 w-3 mr-1" />
+                                                      {unit}
+                                                    </span>
+                                                  </>
+                                                )}
+                                                {barcode && (
+                                                  <>
+                                                    <span>•</span>
+                                                    <span>Barcode: {barcode}</span>
+                                                  </>
+                                                )}
+                                              </div>
+                                            </div>
+                                            <div className="text-right">
+                                              <div className="font-semibold text-green-600">LKR {price?.toLocaleString()}</div>
+                                              <div className={`text-xs ${stockStatus.color} ${stockStatus.bg} px-2 py-1 rounded-full mt-1`}>
+                                                {stockStatus.text}: {qty}
+                                              </div>
+                                            </div>
+                                          </div>
+                                        );
+                                      })}
+                                    </div>
+                                  )}
+
+                                  {/* No products found message */}
+                                  {showProductSuggestions[index] && 
+                                  productSearchQuery[index] && 
+                                  productSuggestions[index] && 
+                                  productSuggestions[index].length === 0 && 
+                                  !loading.products && (
+                                    <div className="absolute z-20 w-full mt-1 bg-white border border-gray-200 rounded-xl shadow-lg p-4 text-center">
+                                      <div className="text-gray-500 text-sm">
+                                        <Package className="h-8 w-8 mx-auto mb-2 text-gray-300" />
+                                        <p>No products found</p>
+                                        <p className="text-xs mt-1">Try a different search term or add the product in Products page</p>
+                                      </div>
+                                    </div>
+                                  )}
+                                </div>
+                                
+                                <div className="lg:col-span-3">
+                                  <label className="block text-sm font-medium mb-2 text-gray-700">
+                                    Quantity *
+                                  </label>
+                                  <input
+                                    type="number"
+                                    value={item.quantity}
+                                    onChange={(e) => {
+                                      const newItems = [...orderFormData.items];
+                                      newItems[index].quantity = e.target.value;
+                                      setOrderFormData({ ...orderFormData, items: newItems });
+                                    }}
+                                    className={`w-full p-3 border border-gray-300 rounded-xl ${inputFocusStyle}`}
+                                    placeholder="0"
+                                    min="1"
+                                    required
+                                  />
+                                </div>
+                                
+                                <div className="lg:col-span-3">
+                                  <label className="block text-sm font-medium mb-2 text-gray-700">
+                                    Unit Price (LKR) *
+                                  </label>
+                                  <input
+                                    type="number"
+                                    value={item.unitPrice}
+                                    onChange={(e) => {
+                                      const newItems = [...orderFormData.items];
+                                      newItems[index].unitPrice = e.target.value;
+                                      setOrderFormData({ ...orderFormData, items: newItems });
+                                    }}
+                                    className={`w-full p-3 border border-gray-300 rounded-xl ${inputFocusStyle}`}
+                                    placeholder="0.00"
+                                    min="0"
+                                    step="0.01"
+                                    required
+                                  />
+                                </div>
+                                
+                                <div className="lg:col-span-1">
+                                  <button
+                                    type="button"
+                                    onClick={() => removeItem(index)}
+                                    className="w-full flex items-center justify-center space-x-2 bg-red-500 text-white p-3 rounded-xl hover:bg-red-600 transition-all duration-300 shadow-lg hover:shadow-xl transform hover:scale-105"
+                                    disabled={orderFormData.items.length <= 1}
+                                  >
+                                    <Trash2 className="h-4 w-4" />
+                                  </button>
+                                </div>
+                              </div>
+                              
+                              {/* Item Total */}
+                              {item.quantity && item.unitPrice && Number(item.quantity) > 0 && Number(item.unitPrice) > 0 && (
+                                <div className="mt-3 p-3 bg-white rounded-lg border border-green-200 transition-all duration-300 hover:shadow-md">
+                                  <div className="flex justify-between items-center text-sm">
+                                    <span className="text-gray-600">Item Total:</span>
+                                    <span className="font-semibold text-green-600">
+                                      LKR {(Number(item.quantity) * Number(item.unitPrice)).toLocaleString()}
+                                    </span>
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+
+                        {/* Enhanced Totals and Submit Section */}
+                        <div 
+                          className="rounded-2xl p-8 border transition-all duration-300 hover:shadow-xl"
+                          style={{ 
+                            backgroundColor: `${colors.primary}05`,
+                            borderColor: `${colors.primary}20`
+                          }}
+                        >
+                          <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
+                            <div className="text-center p-4 bg-white rounded-xl border border-gray-200 shadow-sm transition-all duration-300 hover:shadow-md">
+                              <div className="text-sm font-medium text-gray-600">Items Total</div>
+                              <div className="text-2xl font-bold mt-2 text-gray-800">
+                                LKR {currentTotal.toLocaleString()}
+                              </div>
+                            </div>
+                            <div className="text-center p-4 bg-white rounded-xl border border-gray-200 shadow-sm transition-all duration-300 hover:shadow-md">
+                              <div className="text-sm font-medium text-gray-600">Pending Balance</div>
+                              <div className="text-2xl font-bold mt-2 text-orange-600">
+                                LKR {orderFormData.customerPendingPayments.toLocaleString()}
+                              </div>
+                            </div>
+                            <div className="text-center p-4 bg-white rounded-xl border border-gray-200 shadow-sm transition-all duration-300 hover:shadow-md">
+                              <div className="text-sm font-medium text-gray-600">Items Count</div>
+                              <div className="text-2xl font-bold mt-2" style={{ color: colors.primary }}>
+                                {orderFormData.items.filter(item => item.productName).length}
+                              </div>
+                            </div>
+                            <div 
+                              className="text-center p-4 rounded-xl border shadow-lg transition-all duration-300 hover:shadow-xl"
+                              style={{ 
+                                backgroundColor: colors.primary,
+                                borderColor: colors.primary
+                              }}
+                            >
+                              <div className="text-sm font-medium text-white">Grand Total</div>
+                              <div className="text-2xl font-bold mt-2 text-white">
+                                LKR {grandTotal.toLocaleString()}
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="flex flex-col sm:flex-row gap-4 justify-center">
+                            <button
+                              type="submit"
+                              disabled={!orderFormData.customerId || orderFormData.items.length === 0}
+                              className="flex items-center space-x-3 text-white px-8 py-4 rounded-xl transition-all duration-300 shadow-2xl hover:shadow-3xl transform hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none disabled:hover:shadow-2xl"
+                              style={{ backgroundColor: colors.success }}
+                            >
+                              <CheckCircle className="h-5 w-5" />
+                              <span className="font-semibold text-lg">Create Order</span>
+                            </button>
+                          </div>
+                        </div>
+                      </form>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {activeTab === 'customers' && (
+            <div className="space-y-6 animate-fade-in">
+              {/* Mobile Customers View */}
+              {isMobile ? (
+                <div className="space-y-4">
+                  {/* Search and Filter */}
+                  <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-200">
+                    <div className="space-y-3">
+                      <div className="relative">
+                        <Search className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
+                        <input
+                          type="text"
+                          placeholder="Search customers..."
+                          value={searchQuery}
+                          onChange={(e) => setSearchQuery(e.target.value)}
+                          className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg bg-gray-50"
+                        />
+                      </div>
+                      
+                      <div className="flex space-x-2">
+                        {['all', 'pending', 'clear'].map((filter) => (
+                          <button
+                            key={filter}
+                            onClick={() => setCustomerFilter(filter as any)}
+                            className={`flex-1 px-3 py-2 rounded-lg text-sm font-medium ${
+                              customerFilter === filter
+                                ? 'text-white'
+                                : 'bg-gray-200 text-gray-700'
+                            }`}
+                            style={{
+                              backgroundColor: customerFilter === filter ? colors.primary : undefined
+                            }}
+                          >
+                            {filter === 'all' ? 'All' : filter === 'pending' ? 'Pending' : 'Clear'}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Customers List */}
+                  <div>
+                    {loading.customers ? (
+                      <div className="flex justify-center items-center py-12">
+                        <div 
+                          className="animate-spin rounded-full h-8 w-8 border-b-2"
+                          style={{ borderColor: colors.secondary }}
+                        ></div>
+                      </div>
+                    ) : customers.length === 0 ? (
+                      <div className="text-center py-12 bg-white rounded-xl p-6">
+                        <User className="h-12 w-12 text-gray-300 mx-auto mb-4" />
+                        <h3 className="text-lg font-semibold text-gray-600 mb-2">No customers found</h3>
+                        <p className="text-gray-500 mb-4">Start by adding your first customer</p>
+                        <button
+                          onClick={() => {
+                            setIsEditMode(false);
+                            setCustomerFormData({ name: '', email: '', phone: '', address: '', pendingPayments: 0 });
+                            setShowCustomerModal(true);
+                          }}
+                          className="flex items-center space-x-2 text-white px-4 py-2 rounded-lg mx-auto"
+                          style={{ backgroundColor: colors.primary }}
+                        >
+                          <Plus className="h-4 w-4" />
+                          <span>Add First Customer</span>
+                        </button>
+                      </div>
+                    ) : (
+                      <div>
+                        {filteredCustomersByPayment
+                          .filter(customer => 
+                            customer.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                            customer.email.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                            customer.phone.includes(searchQuery)
+                          )
+                          .map((customer) => (
+                            <MobileCustomerRow key={customer._id} customer={customer} />
+                          ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ) : (
+                /* Desktop Customers View */
+                <div className="space-y-8">
+                  <div className="bg-white rounded-2xl shadow-xl border border-gray-200 overflow-hidden transition-all duration-300 hover:shadow-2xl">
+                    <div 
+                      className="p-6 transition-all duration-500"
+                      style={{ backgroundColor: colors.secondary }}
+                    >
+                      <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between space-y-4 lg:space-y-0">
+                        <h2 className="text-2xl font-bold text-white flex items-center space-x-3">
+                          <User className="h-6 w-6" />
+                          <span>Customer Management</span>
+                          <span className="bg-white/20 px-3 py-1 rounded-full text-sm">
+                            {filteredCustomersByPayment.length} customers
+                          </span>
+                        </h2>
+                        
+                        <div className="flex items-center space-x-4">
+                          {/* Customer Filter Buttons */}
+                          <div className="flex bg-white/20 rounded-lg p-1">
+                            <button
+                              onClick={() => setCustomerFilter('all')}
+                              className={`px-3 py-1 rounded-md text-sm font-medium transition-all duration-300 ${
+                                customerFilter === 'all' 
+                                  ? 'bg-white text-gray-800 shadow-sm' 
+                                  : 'text-white hover:bg-white/10'
+                              }`}
+                            >
+                              All
+                            </button>
+                            <button
+                              onClick={() => setCustomerFilter('pending')}
+                              className={`px-3 py-1 rounded-md text-sm font-medium transition-all duration-300 ${
+                                customerFilter === 'pending' 
+                                  ? 'bg-orange-500 text-white shadow-sm' 
+                                  : 'text-white hover:bg-white/10'
+                              }`}
+                            >
+                              Pending
+                            </button>
+                            <button
+                              onClick={() => setCustomerFilter('clear')}
+                              className={`px-3 py-1 rounded-md text-sm font-medium transition-all duration-300 ${
+                                customerFilter === 'clear' 
+                                  ? 'bg-green-500 text-white shadow-sm' 
+                                  : 'text-white hover:bg-white/10'
+                              }`}
+                            >
+                              Clear
+                            </button>
+                          </div>
+
+                          <div className="relative">
+                            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                              <Search className="h-4 w-4 text-gray-400" />
+                            </div>
+                            <input
+                              type="text"
+                              placeholder="Search customers..."
+                              value={searchQuery}
+                              onChange={(e) => setSearchQuery(e.target.value)}
+                              className={`pl-10 pr-4 py-2 border border-gray-300 rounded-xl w-full lg:w-64 ${inputFocusStyle}`}
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="p-6">
+                      {loading.customers ? (
+                        <div className="flex justify-center items-center py-12">
+                          <div 
+                            className="animate-spin rounded-full h-12 w-12 border-b-2 transition-all duration-500"
+                            style={{ borderColor: colors.secondary }}
+                          ></div>
+                        </div>
+                      ) : customers.length === 0 ? (
+                        <div className="text-center py-12">
+                          <User className="h-16 w-16 text-gray-300 mx-auto mb-4" />
+                          <h3 className="text-lg font-semibold text-gray-600 mb-2">No customers found</h3>
+                          <p className="text-gray-500 mb-6">Start by adding your first customer</p>
+                          <button
+                            onClick={() => {
+                              setIsEditMode(false);
+                              setCustomerFormData({ name: '', email: '', phone: '', address: '', pendingPayments: 0 });
+                              setShowCustomerModal(true);
+                              handleTabChange('create');
+                            }}
+                            className="flex items-center space-x-2 text-white px-6 py-3 rounded-xl transition-all duration-300 shadow-lg hover:shadow-xl mx-auto transform hover:scale-105"
+                            style={{ backgroundColor: colors.primary }}
+                          >
+                            <Plus className="h-4 w-4" />
+                            <span>Add First Customer</span>
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="overflow-hidden rounded-xl border border-gray-200">
+                          <table className="w-full">
+                            <thead>
+                              <tr className="bg-gray-50 border-b border-gray-200">
+                                <th className="py-4 px-6 text-left text-sm font-semibold text-gray-900">Customer</th>
+                                <th className="py-4 px-6 text-left text-sm font-semibold text-gray-900">Contact</th>
+                                <th className="py-4 px-6 text-left text-sm font-semibold text-gray-900">Address</th>
+                                <th className="py-4 px-6 text-left text-sm font-semibold text-gray-900">Status</th>
+                                <th className="py-4 px-6 text-left text-sm font-semibold text-gray-900">Pending Amount</th>
+                                <th className="py-4 px-6 text-left text-sm font-semibold text-gray-900">Actions</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-gray-200">
+                              {filteredCustomersByPayment
+                                .filter(customer => 
+                                  customer.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                                  customer.email.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                                  customer.phone.includes(searchQuery)
+                                )
+                                .map((customer) => (
+                                <tr 
+                                  key={customer._id} 
+                                  className="bg-white hover:bg-gray-50 transition-colors duration-200"
+                                >
+                                  <td className="py-4 px-6">
+                                    <div>
+                                      <div className="font-semibold text-gray-900">{customer.name}</div>
+                                    </div>
+                                  </td>
+                                  <td className="py-4 px-6">
+                                    <div className="space-y-1">
+                                      <div className="flex items-center space-x-2 text-sm text-gray-600">
+                                        <Mail className="h-3 w-3" />
+                                        <span>{customer.email}</span>
+                                      </div>
+                                      <div className="flex items-center space-x-2 text-sm text-gray-600">
+                                        <Phone className="h-3 w-3" />
+                                        <span>{customer.phone}</span>
+                                      </div>
+                                    </div>
+                                  </td>
+                                  <td className="py-4 px-6">
+                                    <div className="text-sm text-gray-600 max-w-xs">
+                                      {customer.address}
+                                    </div>
+                                  </td>
+                                  <td className="py-4 px-6">
+                                    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                                      customer.pendingPayments > 0 
+                                        ? 'bg-orange-100 text-orange-800 border border-orange-200' 
+                                        : 'bg-green-100 text-green-800 border border-green-200'
+                                    }`}>
+                                      {customer.pendingPayments > 0 ? 'Pending' : 'Clear'}
+                                    </span>
+                                  </td>
+                                  <td className="py-4 px-6">
+                                    <div className="text-sm font-semibold text-orange-600">
+                                      LKR {customer.pendingPayments.toLocaleString()}
+                                    </div>
+                                  </td>
+                                  <td className="py-4 px-6">
+                                    <div className="flex items-center space-x-2">
+                                      <button
+                                        onClick={() => generateCustomerInvoices(customer._id)}
+                                        className="flex items-center space-x-1 bg-blue-500 text-white px-3 py-2 rounded-lg hover:bg-blue-600 transition-all duration-300 text-sm transform hover:scale-105"
+                                      >
+                                        <Download className="h-3 w-3" />
+                                        <span>Invoices</span>
+                                      </button>
+                                      <button
+                                        onClick={() => handleEditCustomer(customer)}
+                                        className="flex items-center space-x-1 text-white px-3 py-2 rounded-lg hover:bg-blue-600 transition-all duration-300 text-sm transform hover:scale-105"
+                                        style={{ backgroundColor: colors.secondary }}
+                                      >
+                                        <Edit className="h-3 w-3" />
+                                      </button>
+                                      <button
+                                        onClick={() => handleDeleteCustomer(customer._id)}
+                                        className="flex items-center space-x-1 bg-red-500 text-white px-3 py-2 rounded-lg hover:bg-red-600 transition-all duration-300 text-sm transform hover:scale-105"
+                                      >
+                                        <Trash2 className="h-3 w-3" />
+                                      </button>
+                                    </div>
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {activeTab === 'orders' && (
+            <div className="space-y-6 animate-fade-in">
+              {/* Mobile Orders View */}
+              {isMobile ? (
+                <div className="space-y-4">
+                  {/* Search and Filter */}
+                  <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-200">
+                    <div className="space-y-3">
+                      <div className="relative">
+                        <Search className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
+                        <input
+                          type="text"
+                          placeholder="Search orders..."
+                          value={orderSearchQuery}
+                          onChange={handleOrderSearch}
+                          className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg bg-gray-50"
+                        />
+                        {orderSearchQuery && (
+                          <button
+                            onClick={() => setOrderSearchQuery('')}
+                            className="absolute inset-y-0 right-0 pr-3 flex items-center"
+                          >
+                            <X className="h-4 w-4 text-gray-400 hover:text-gray-600" />
+                          </button>
+                        )}
+                      </div>
+                      
                       <button
-                        onClick={() => generateInvoice(order)}
-                        disabled={!order.customer}
-                        className="flex items-center space-x-2 bg-green-500 text-white px-4 py-2 rounded-lg hover:bg-green-600 disabled:bg-gray-300 disabled:cursor-not-allowed transition-all duration-300 text-sm transform hover:scale-105"
+                        onClick={showHiddenOrders ? () => setShowHiddenOrders(false) : handleShowPersonalizedOrders}
+                        className={`w-full py-3 rounded-lg transition-colors font-medium ${
+                          showHiddenOrders 
+                            ? 'bg-orange-500 text-white' 
+                            : 'bg-gray-200 text-gray-700'
+                        }`}
                       >
-                        <Download className="h-3 w-3" />
-                        <span>Invoice</span>
-                      </button>
-                      <button
-                        onClick={() => sendInvoiceViaWhatsApp(order)}
-                        disabled={!order.customer}
-                        className="flex items-center space-x-2 text-white px-4 py-2 rounded-lg hover:bg-blue-600 disabled:bg-gray-300 disabled:cursor-not-allowed transition-all duration-300 text-sm transform hover:scale-105"
-                        style={{ backgroundColor: colors.secondary }}
-                      >
-                        <Send className="h-3 w-3" />
-                        <span>WhatsApp</span>
-                      </button>
-                      {/* Delete Order Button */}
-                      <button
-                        onClick={() => {
-                          showConfirmationModal(
-                            'Delete Order',
-                            `Are you sure you want to delete order #${order._id.slice(-8)}? This action cannot be undone.`,
-                            'delete',
-                            async () => {
-                              try {
-                                await api.delete(`/api/orders/${order._id}`);
-                                setOrders(orders.filter(o => o._id !== order._id));
-                                showSuccessMessage('Order Deleted', `Order #${order._id.slice(-8)} has been deleted successfully!`);
-                              } catch (err: any) {
-                                setError('Failed to delete order: ' + (err.response?.data?.error || err.message));
-                              }
-                            }
-                          );
-                        }}
-                        className="flex items-center space-x-2 bg-red-500 text-white px-4 py-2 rounded-lg hover:bg-red-600 transition-all duration-300 text-sm transform hover:scale-105"
-                      >
-                        <Trash2 className="h-3 w-3" />
-                        <span>Delete</span>
+                        {showHiddenOrders ? 'Hide Personalized' : 'Show Personalized'}
                       </button>
                     </div>
                   </div>
-                  
-                  {expandedOrder === order._id && (
-                    <div className="mt-4 pt-4 border-t border-gray-200 animate-slide-down">
-                      <h4 className="font-medium text-gray-900 mb-3">Order Items</h4>
-                      <div className="space-y-2">
-                        {order.items.map((item, idx) => (
-                          <div 
-                            key={idx} 
-                            className="flex justify-between items-center p-3 bg-white rounded-lg border border-gray-200 transition-all duration-300 hover:bg-gray-50 hover:shadow-md hover:translate-x-1"
-                          >
-                            <div>
-                              <div className="font-medium text-gray-900">{item.productName}</div>
-                              <div className="text-sm text-gray-600">Quantity: {item.quantity}</div>
-                            </div>
-                            <div className="text-right">
-                              <div className="font-semibold text-gray-900">LKR {item.unitPrice}</div>
-                              <div className="text-sm text-green-600">LKR {(item.quantity * item.unitPrice).toLocaleString()}</div>
-                            </div>
-                          </div>
+
+                  {/* Orders List */}
+                  <div>
+                    {loading.orders ? (
+                      <div className="flex justify-center items-center py-12">
+                        <div 
+                          className="animate-spin rounded-full h-8 w-8 border-b-2"
+                          style={{ borderColor: colors.accent }}
+                        ></div>
+                      </div>
+                    ) : orders.length === 0 ? (
+                      <div className="text-center py-12 bg-white rounded-xl p-6">
+                        <Package className="h-12 w-12 text-gray-300 mx-auto mb-4" />
+                        <h3 className="text-lg font-semibold text-gray-600 mb-2">No orders found</h3>
+                        <p className="text-gray-500">Create your first order to get started</p>
+                      </div>
+                    ) : displayedOrders.length === 0 ? (
+                      <div className="text-center py-12 bg-white rounded-xl p-6">
+                        <Search className="h-12 w-12 text-gray-300 mx-auto mb-4" />
+                        <h3 className="text-lg font-semibold text-gray-600 mb-2">No orders found</h3>
+                        <p className="text-gray-500 mb-4">
+                          No orders matching "<span className="font-semibold">{orderSearchQuery}</span>"
+                        </p>
+                        <button
+                          onClick={() => setOrderSearchQuery('')}
+                          className="flex items-center space-x-2 text-white px-4 py-2 rounded-lg mx-auto"
+                          style={{ backgroundColor: colors.primary }}
+                        >
+                          <X className="h-4 w-4" />
+                          <span>Clear Search</span>
+                        </button>
+                      </div>
+                    ) : (
+                      <div>
+                        {displayedOrders.map((order) => (
+                          <MobileOrderCard key={order._id} order={order} />
                         ))}
                       </div>
-                      
-                      <div className="mt-4 p-3 bg-gray-50 rounded-lg border border-gray-200 transition-all duration-300 hover:bg-gray-100 hover:shadow-md">
-                        <div className="flex justify-between items-center text-sm">
-                          <span className="text-gray-600">Payment Method:</span>
-                          <span className="font-medium text-gray-900">{order.paymentMethod}</span>
-                        </div>
-                        {order.customer && (
-                          <>
-                            <div className="flex justify-between items-center text-sm mt-2">
-                              <span className="text-gray-600">Customer Phone:</span>
-                              <span className="font-medium text-gray-900">{order.customer.phone}</span>
-                            </div>
-                            <div className="flex justify-between items-center text-sm mt-2">
-                              <span className="text-gray-600">Customer Email:</span>
-                              <span className="font-medium text-gray-900">{order.customer.email}</span>
-                            </div>
-                          </>
-                        )}
-                      </div>
-                    </div>
-                  )}
+                    )}
+                  </div>
                 </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-    </div>
-  </div>
-)}
+              ) : (
+                /* Desktop Orders View */
+                <div className="space-y-8">
+                  <div className="bg-white rounded-2xl shadow-xl border border-gray-200 overflow-hidden transition-all duration-300 hover:shadow-2xl">
+                    <div 
+                      className="p-6 transition-all duration-500"
+                      style={{ backgroundColor: colors.accent }}
+                    >
+                      <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between space-y-4 lg:space-y-0">
+                        <h2 className="text-2xl font-bold text-white flex items-center space-x-3">
+                          <Package className="h-6 w-6" />
+                          <span>Order History</span>
+                          <span className="bg-white/20 px-3 py-1 rounded-full text-sm">
+                            {displayedOrders.length} of {orders.length} orders
+                          </span>
+                        </h2>
+                        
+                        <div className="flex flex-col sm:flex-row gap-4">
+                          {/* Search Input */}
+                          <div className="relative">
+                            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                              <Search className="h-4 w-4 text-gray-400" />
+                            </div>
+                            <input
+                              type="text"
+                              placeholder="Search orders..."
+                              value={orderSearchQuery}
+                              onChange={handleOrderSearch}
+                              className={`pl-10 pr-4 py-2 border border-gray-300 rounded-xl w-full lg:w-64 ${inputFocusStyle}`}
+                            />
+                            {orderSearchQuery && (
+                              <button
+                                onClick={() => setOrderSearchQuery('')}
+                                className="absolute inset-y-0 right-0 pr-3 flex items-center"
+                              >
+                                <X className="h-4 w-4 text-gray-400 hover:text-gray-600" />
+                              </button>
+                            )}
+                          </div>
+                          
+                          <button
+                            onClick={showHiddenOrders ? () => setShowHiddenOrders(false) : handleShowPersonalizedOrders}
+                            className={`flex items-center space-x-2 px-4 py-2 rounded-xl transition-all duration-300 ${
+                              showHiddenOrders 
+                                ? 'bg-white text-teal-700 shadow-lg transform scale-105' 
+                                : 'bg-white/20 text-white hover:bg-white/30 hover:scale-105'
+                            }`}
+                            style={{ color: showHiddenOrders ? colors.accent : 'white' }}
+                          >
+                            {showHiddenOrders ? <EyeOff className="h-4 w-4" /> : <Lock className="h-4 w-4" />}
+                            <span>{showHiddenOrders ? 'Hide Personalized' : 'Show Personalized'}</span>
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Search Tips */}
+                      {orderSearchQuery && (
+                        <div className="mt-4 text-white/80 text-sm">
+                          Searching in: Order ID, Customer Name, Email, Phone, Products, Status, Payment Method, Date
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="p-6">
+                      {loading.orders ? (
+                        <div className="flex justify-center items-center py-12">
+                          <div 
+                            className="animate-spin rounded-full h-12 w-12 border-b-2 transition-all duration-500"
+                            style={{ borderColor: colors.accent }}
+                          ></div>
+                        </div>
+                      ) : orders.length === 0 ? (
+                        <div className="text-center py-12">
+                          <Package className="h-16 w-16 text-gray-300 mx-auto mb-4" />
+                          <h3 className="text-lg font-semibold text-gray-600 mb-2">No orders found</h3>
+                          <p className="text-gray-500">Create your first order to get started</p>
+                        </div>
+                      ) : displayedOrders.length === 0 ? (
+                        <div className="text-center py-12">
+                          <Search className="h-16 w-16 text-gray-300 mx-auto mb-4" />
+                          <h3 className="text-lg font-semibold text-gray-600 mb-2">No orders found</h3>
+                          <p className="text-gray-500 mb-4">
+                            No orders matching "<span className="font-semibold">{orderSearchQuery}</span>"
+                          </p>
+                          <button
+                            onClick={() => setOrderSearchQuery('')}
+                            className="flex items-center space-x-2 text-white px-4 py-2 rounded-xl transition-all duration-300 mx-auto transform hover:scale-105"
+                            style={{ backgroundColor: colors.primary }}
+                          >
+                            <X className="h-4 w-4" />
+                            <span>Clear Search</span>
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="space-y-4">
+                          {displayedOrders.map((order) => (
+                            <div 
+                              key={order._id} 
+                              className={`rounded-xl border transition-all duration-300 overflow-hidden hover:shadow-lg hover:scale-102 ${
+                                order.personalized 
+                                  ? 'border-orange-200 bg-orange-50 hover:bg-orange-100' 
+                                  : 'border-gray-200 bg-white hover:bg-gray-50'
+                              }`}
+                            >
+                              <div className="p-6">
+                                <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between space-y-4 lg:space-y-0">
+                                  <div className="flex-1">
+                                    <div className="flex items-start justify-between mb-3">
+                                      <div>
+                                        <h3 className="font-semibold text-gray-900 flex items-center space-x-2 group-hover:text-blue-600 transition-colors duration-300">
+                                          <span>Order #{order._id.slice(-8)}</span>
+                                          {order.personalized && (
+                                            <span className="bg-orange-100 text-orange-800 px-2 py-1 rounded-full text-xs font-medium border border-orange-200 transition-all duration-300 group-hover:bg-orange-200 group-hover:scale-105">
+                                              Personalized
+                                            </span>
+                                          )}
+                                          <span className={`px-2 py-1 rounded-full text-xs font-medium border transition-all duration-300 group-hover:scale-105 ${getStatusColor(order.status)}`}>
+                                            {order.status}
+                                          </span>
+                                        </h3>
+                                        <p className="text-sm text-gray-600 mt-1 transition-colors duration-300 group-hover:text-gray-700">
+                                          {order.customer ? order.customer.name : 'Unknown Customer'} • {formatDate(order.createdAt)}
+                                        </p>
+                                      </div>
+                                      <button
+                                        onClick={() => setExpandedOrder(expandedOrder === order._id ? null : order._id)}
+                                        className="flex items-center space-x-1 text-gray-500 hover:text-gray-700 transition-all duration-300 transform hover:scale-110"
+                                      >
+                                        {expandedOrder === order._id ? (
+                                          <ChevronUp className="h-4 w-4" />
+                                        ) : (
+                                          <ChevronDown className="h-4 w-4" />
+                                        )}
+                                      </button>
+                                    </div>
+                                    
+                                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+                                      <div className="text-center p-3 bg-gray-100 rounded-lg transition-all duration-300 hover:bg-white hover:shadow-md">
+                                        <div className="text-sm text-gray-600">Items</div>
+                                        <div className="font-semibold text-gray-900">{order.items.length}</div>
+                                      </div>
+                                      <div className="text-center p-3 bg-gray-100 rounded-lg transition-all duration-300 hover:bg-white hover:shadow-md">
+                                        <div className="text-sm text-gray-600">Order Total</div>
+                                        <div className="font-semibold text-green-600">LKR {order.totalAmount.toLocaleString()}</div>
+                                      </div>
+                                      <div className="text-center p-3 bg-gray-100 rounded-lg transition-all duration-300 hover:bg-white hover:shadow-md">
+                                        <div className="text-sm text-gray-600">Pending</div>
+                                        <div className="font-semibold text-orange-600">LKR {order.pendingPayments.toLocaleString()}</div>
+                                      </div>
+                                    </div>
+                                  </div>
+                                  
+                                  <div className="flex flex-col sm:flex-row gap-2">
+                                    <button
+                                      onClick={() => generateInvoice(order)}
+                                      disabled={!order.customer}
+                                      className="flex items-center space-x-2 bg-green-500 text-white px-4 py-2 rounded-lg hover:bg-green-600 disabled:bg-gray-300 disabled:cursor-not-allowed transition-all duration-300 text-sm transform hover:scale-105"
+                                    >
+                                      <Download className="h-3 w-3" />
+                                      <span>Invoice</span>
+                                    </button>
+                                    <button
+                                      onClick={() => sendInvoiceViaWhatsApp(order)}
+                                      disabled={!order.customer}
+                                      className="flex items-center space-x-2 text-white px-4 py-2 rounded-lg hover:bg-blue-600 disabled:bg-gray-300 disabled:cursor-not-allowed transition-all duration-300 text-sm transform hover:scale-105"
+                                      style={{ backgroundColor: colors.secondary }}
+                                    >
+                                      <Send className="h-3 w-3" />
+                                      <span>WhatsApp</span>
+                                    </button>
+                                    {/* Delete Order Button with PIN protection */}
+                                    <button
+                                      onClick={() => handleDeleteOrderClick(order._id)}
+                                      className="flex items-center space-x-2 bg-red-500 text-white px-4 py-2 rounded-lg hover:bg-red-600 transition-all duration-300 text-sm transform hover:scale-105"
+                                    >
+                                      <Trash2 className="h-3 w-3" />
+                                      <span>Delete</span>
+                                    </button>
+                                  </div>
+                                </div>
+                                
+                                {expandedOrder === order._id && (
+                                  <div className="mt-4 pt-4 border-t border-gray-200 animate-slide-down">
+                                    <h4 className="font-medium text-gray-900 mb-3">Order Items</h4>
+                                    <div className="space-y-2">
+                                      {order.items.map((item, idx) => (
+                                        <div 
+                                          key={idx} 
+                                          className="flex justify-between items-center p-3 bg-white rounded-lg border border-gray-200 transition-all duration-300 hover:bg-gray-50 hover:shadow-md hover:translate-x-1"
+                                        >
+                                          <div>
+                                            <div className="font-medium text-gray-900">{item.productName}</div>
+                                            <div className="text-sm text-gray-600">Quantity: {item.quantity}</div>
+                                            {item.unit && (
+                                              <div className="text-xs text-gray-500 flex items-center mt-1">
+                                                <Layers className="h-3 w-3 mr-1" />
+                                                {item.unit}
+                                              </div>
+                                            )}
+                                          </div>
+                                          <div className="text-right">
+                                            <div className="font-semibold text-gray-900">LKR {item.unitPrice}</div>
+                                            <div className="text-sm text-green-600">LKR {(item.quantity * item.unitPrice).toLocaleString()}</div>
+                                          </div>
+                                        </div>
+                                      ))}
+                                    </div>
+                                    
+                                    <div className="mt-4 p-3 bg-gray-50 rounded-lg border border-gray-200 transition-all duration-300 hover:bg-gray-100 hover:shadow-md">
+                                      <div className="flex justify-between items-center text-sm">
+                                        <span className="text-gray-600">Payment Method:</span>
+                                        <span className="font-medium text-gray-900">{order.paymentMethod}</span>
+                                      </div>
+                                      {order.customer && (
+                                        <>
+                                          <div className="flex justify-between items-center text-sm mt-2">
+                                            <span className="text-gray-600">Customer Phone:</span>
+                                            <span className="font-medium text-gray-900">{order.customer.phone}</span>
+                                          </div>
+                                          <div className="flex justify-between items-center text-sm mt-2">
+                                            <span className="text-gray-600">Customer Email:</span>
+                                            <span className="font-medium text-gray-900">{order.customer.email}</span>
+                                          </div>
+                                        </>
+                                      )}
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
         {/* Scanner Modal */}
         {showScanner && (
           <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4 animate-fade-in">
-            <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full transform animate-scale-in">
+            <div className={`bg-white rounded-2xl shadow-2xl ${isMobile ? 'w-full max-w-full' : 'max-w-md w-full'} transform animate-scale-in`}>
               <div className="p-6 border-b border-gray-200 flex justify-between items-center">
                 <h3 className="text-xl font-semibold text-gray-800">Scan Product Barcode</h3>
                 <button
@@ -1837,7 +2830,7 @@ const Orders = ({ socket }: { socket: Socket }) => {
                 <video 
                   ref={videoRef} 
                   className="w-full rounded-xl border-2 border-dashed border-gray-300 transition-all duration-300 hover:border-blue-300"
-                  style={{ minHeight: '300px' }}
+                  style={{ minHeight: isMobile ? '250px' : '300px' }}
                 />
                 <p className="text-sm text-gray-600 mt-4 text-center">
                   Point your camera at the product barcode to scan automatically
@@ -1862,7 +2855,7 @@ const Orders = ({ socket }: { socket: Socket }) => {
         {/* Customer Modal */}
         {showCustomerModal && (
           <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4 animate-fade-in">
-            <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full transform animate-scale-in">
+            <div className={`bg-white rounded-2xl shadow-2xl ${isMobile ? 'w-full max-w-full' : 'max-w-md w-full'} transform animate-scale-in`}>
               <div 
                 className="p-6 rounded-t-2xl text-white transition-all duration-500"
                 style={{ backgroundColor: colors.primary }}
@@ -1987,7 +2980,7 @@ const Orders = ({ socket }: { socket: Socket }) => {
         {/* Enhanced Confirmation Modal */}
         {showConfirmation && (
           <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4 animate-fade-in">
-            <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full transform animate-scale-in">
+            <div className={`bg-white rounded-2xl shadow-2xl ${isMobile ? 'w-full max-w-full' : 'max-w-md w-full'} transform animate-scale-in`}>
               <div className="p-8">
                 <div className="text-center">
                   <div className="flex justify-center mb-6">
@@ -2025,6 +3018,116 @@ const Orders = ({ socket }: { socket: Socket }) => {
             </div>
           </div>
         )}
+
+        {/* Password Modal for Personalized Orders */}
+        {showPasswordModal && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4 animate-fade-in">
+            <div className={`bg-white rounded-2xl shadow-2xl ${isMobile ? 'w-full max-w-full' : 'max-w-md w-full'} transform animate-scale-in`}>
+              <div 
+                className="p-6 rounded-t-2xl text-white transition-all duration-500"
+                style={{ backgroundColor: colors.primary }}
+              >
+                <h3 className="text-xl font-bold flex items-center space-x-2">
+                  <Lock className="h-5 w-5" />
+                  <span>Enter Password</span>
+                </h3>
+              </div>
+              <div className="p-6 space-y-6">
+                <div>
+                  <label className="block text-sm font-semibold mb-3 text-gray-700">
+                    Password Required
+                  </label>
+                  <p className="text-sm text-gray-600 mb-4">
+                    Please enter the password to view personalized orders.
+                  </p>
+                  <input
+                    type="password"
+                    value={passwordInput}
+                    onChange={(e) => setPasswordInput(e.target.value)}
+                    className={`w-full p-4 border border-gray-300 rounded-xl bg-gray-50 ${inputFocusStyle}`}
+                    placeholder="Enter password"
+                    autoFocus
+                  />
+                </div>
+                
+                <div className="flex space-x-4 pt-4">
+                  <button
+                    onClick={() => {
+                      setShowPasswordModal(false);
+                      setPasswordInput('');
+                    }}
+                    className="flex-1 bg-gray-500 text-white py-4 rounded-xl hover:bg-gray-600 transition-all duration-300 font-semibold shadow-lg hover:shadow-xl transform hover:scale-105"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={verifyPassword}
+                    className="flex-1 text-white py-4 rounded-xl transition-all duration-300 font-semibold shadow-lg hover:shadow-xl transform hover:scale-105"
+                    style={{ backgroundColor: colors.success }}
+                  >
+                    Verify
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* PIN Modal for Order Deletion */}
+        {showPinModal && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4 animate-fade-in">
+            <div className={`bg-white rounded-2xl shadow-2xl ${isMobile ? 'w-full max-w-full' : 'max-w-md w-full'} transform animate-scale-in`}>
+              <div 
+                className="p-6 rounded-t-2xl text-white transition-all duration-500"
+                style={{ backgroundColor: colors.error }}
+              >
+                <h3 className="text-xl font-bold flex items-center space-x-2">
+                  <Lock className="h-5 w-5" />
+                  <span>Enter PIN</span>
+                </h3>
+              </div>
+              <div className="p-6 space-y-6">
+                <div>
+                  <label className="block text-sm font-semibold mb-3 text-gray-700">
+                    PIN Required
+                  </label>
+                  <p className="text-sm text-gray-600 mb-4">
+                    Please enter the PIN to delete this order.
+                  </p>
+                  <input
+                    type="password"
+                    value={pinInput}
+                    onChange={(e) => setPinInput(e.target.value)}
+                    className={`w-full p-4 border border-gray-300 rounded-xl bg-gray-50 ${inputFocusStyle}`}
+                    placeholder="Enter PIN"
+                    autoFocus
+                    maxLength={4}
+                  />
+                </div>
+                
+                <div className="flex space-x-4 pt-4">
+                  <button
+                    onClick={() => {
+                      setShowPinModal(false);
+                      setPinInput('');
+                      setPendingDeleteOrderId(null);
+                    }}
+                    className="flex-1 bg-gray-500 text-white py-4 rounded-xl hover:bg-gray-600 transition-all duration-300 font-semibold shadow-lg hover:shadow-xl transform hover:scale-105"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={verifyPin}
+                    className="flex-1 text-white py-4 rounded-xl transition-all duration-300 font-semibold shadow-lg hover:shadow-xl transform hover:scale-105"
+                    style={{ backgroundColor: colors.error }}
+                  >
+                    Verify & Delete
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
       <style>{`
@@ -2056,6 +3159,25 @@ const Orders = ({ socket }: { socket: Socket }) => {
         }
         .hover-scale-102:hover {
           transform: scale(1.02);
+        }
+
+        /* Mobile Responsive Styles */
+        @media (max-width: 768px) {
+          .mobile-container {
+            padding: 1rem !important;
+          }
+          
+          .mobile-hidden {
+            display: none;
+          }
+          
+          input, select, textarea {
+            font-size: 16px; /* Prevents zoom on iOS */
+          }
+          
+          button, .clickable {
+            min-height: 44px;
+          }
         }
       `}</style>
     </div>

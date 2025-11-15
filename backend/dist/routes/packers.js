@@ -12,13 +12,11 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-// routes/packers.ts (new file)
+// routes/packers.ts
 const express_1 = require("express");
 const Packer_1 = __importDefault(require("../models/Packer"));
 const router = (0, express_1.Router)();
-console.log('Packers route file loaded successfully');
 router.get('/', (req, res) => __awaiter(void 0, void 0, void 0, function* () {
-    console.log('GET /api/packers request received'); // Log when hit
     try {
         const packers = yield Packer_1.default.find();
         res.json(packers);
@@ -31,13 +29,10 @@ router.post('/', (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     try {
         const packer = new Packer_1.default(req.body);
         yield packer.save();
-        // Emit real-time update (get io from express app to avoid circular import)
-        try {
-            const io = req.app.get('io');
-            (io === null || io === void 0 ? void 0 : io.emit) && io.emit('packers:created', packer);
-        }
-        catch (e) {
-            console.warn('Socket emit failed', e);
+        // Emit real-time update
+        const io = req.app.get('io');
+        if (io) {
+            io.emit('packers:created', packer);
         }
         res.json(packer);
     }
@@ -45,20 +40,16 @@ router.post('/', (req, res) => __awaiter(void 0, void 0, void 0, function* () {
         res.status(500).json({ error: 'Failed to create packer' });
     }
 }));
-// Update packer
 router.put('/:id', (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     try {
         const { id } = req.params;
-        const updated = yield Packer_1.default.findByIdAndUpdate(id, req.body, { new: true });
+        const updated = yield Packer_1.default.findByIdAndUpdate(id, req.body, { new: true, runValidators: true });
         if (!updated)
             return res.status(404).json({ error: 'Packer not found' });
-        // Emit real-time update (get io from express app to avoid circular import)
-        try {
-            const io = req.app.get('io');
-            (io === null || io === void 0 ? void 0 : io.emit) && io.emit('packers:updated', updated);
-        }
-        catch (e) {
-            console.warn('Socket emit failed', e);
+        // Emit real-time update - FIXED: Use consistent socket emission
+        const io = req.app.get('io');
+        if (io) {
+            io.emit('packers:updated', updated);
         }
         res.json(updated);
     }
@@ -66,20 +57,16 @@ router.put('/:id', (req, res) => __awaiter(void 0, void 0, void 0, function* () 
         res.status(500).json({ error: 'Failed to update packer' });
     }
 }));
-// Delete packer
 router.delete('/:id', (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     try {
         const { id } = req.params;
         const deleted = yield Packer_1.default.findByIdAndDelete(id);
         if (!deleted)
             return res.status(404).json({ error: 'Packer not found' });
-        // Emit real-time update (get io from express app to avoid circular import)
-        try {
-            const io = req.app.get('io');
-            (io === null || io === void 0 ? void 0 : io.emit) && io.emit('packers:deleted', { _id: id });
-        }
-        catch (e) {
-            console.warn('Socket emit failed', e);
+        // Emit real-time update
+        const io = req.app.get('io');
+        if (io) {
+            io.emit('packers:deleted', { _id: id });
         }
         res.json({ success: true });
     }

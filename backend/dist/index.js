@@ -16,6 +16,8 @@ const customers_1 = __importDefault(require("./routes/customers"));
 const products_1 = __importDefault(require("./routes/products"));
 const packers_1 = __importDefault(require("./routes/packers")); // New
 const packing_1 = __importDefault(require("./routes/packing")); // Updated
+const dotenv_1 = __importDefault(require("dotenv"));
+dotenv_1.default.config({ path: '../.env' });
 const app = (0, express_1.default)();
 const server = http_1.default.createServer(app);
 exports.io = new socket_io_1.Server(server, {
@@ -38,8 +40,9 @@ app.use('/api/customers', customers_1.default);
 app.use('/api/products', products_1.default);
 app.use('/api/packers', packers_1.default); // New
 app.use('/api/packing', packing_1.default); // Updated
+console.log("Using MongoDB URI:", process.env.MONGODB_URI);
 mongoose_1.default
-    .connect(process.env.MONGODB_URI || 'mongodb+srv://ridmi:ayu123@ayusys.moyaii5.mongodb.net/?retryWrites=true&w=majority&appName=AyuSys')
+    .connect(process.env.MONGODB_URI || 'mongodb+srv://auracatcode_db_user:GrFMcN76mITMDkp1@cluster0.ruqmk8t.mongodb.net/ayusys?retryWrites=true&w=majority&appName=AyuSys')
     .then(() => console.log('Connected to MongoDB Atlas'))
     .catch((error) => console.error('MongoDB connection error:', error.message));
 server.listen(5000, () => {

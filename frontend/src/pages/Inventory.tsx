@@ -29,9 +29,6 @@ import {
   Recycle,
   ArrowUpDown
 } from 'lucide-react';
-
-
-
 interface RawMaterial {
   _id: string;
   name: string;
@@ -44,7 +41,6 @@ interface RawMaterial {
   lastUpdated?: string;
   status?: 'optimal' | 'low' | 'critical';
 }
-
 // Enhanced color palette
 const colors = {
   primary: '#0F828C',
@@ -58,13 +54,12 @@ const colors = {
   gradient: 'linear-gradient(135deg, #0F828C 0%, #0A6168 50%, #08444A 100%)',
   gradientHover: 'linear-gradient(135deg, #14A3B0 0%, #0F828C 50%, #0A6168 100%)'
 };
-
 // Enhanced Confirmation Modal Component
-const ConfirmationModal = ({ 
-  isOpen, 
-  onClose, 
-  onConfirm, 
-  title, 
+const ConfirmationModal = ({
+  isOpen,
+  onClose,
+  onConfirm,
+  title,
   message,
   confirmText = "Confirm",
   cancelText = "Cancel",
@@ -80,19 +75,16 @@ const ConfirmationModal = ({
   type?: "danger" | "warning" | "success";
 }) => {
   if (!isOpen) return null;
-
   const typeStyles = {
     danger: "bg-red-500",
     warning: "bg-yellow-500",
     success: "bg-green-500"
   };
-
   const typeIcons = {
     danger: <AlertTriangle className="h-6 w-6 text-white" />,
     warning: <AlertTriangle className="h-6 w-6 text-white" />,
     success: <CheckCircle className="h-6 w-6 text-white" />
   };
-
   return (
     <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-fade-in">
       <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full transform animate-scale-in border border-gray-200">
@@ -109,18 +101,18 @@ const ConfirmationModal = ({
           <p className="text-gray-700 leading-relaxed">{message}</p>
         </div>
         
-        <div className="p-6 border-t border-gray-100 flex space-x-3 justify-end bg-gray-50 rounded-b-2xl">
+        <div className="p-6 border-t border-gray-100 flex flex-col sm:flex-row space-y-3 sm:space-y-0 sm:space-x-3 justify-end bg-gray-50 rounded-b-2xl">
           <button
             onClick={onClose}
-            className="px-6 py-3 border border-gray-300 text-gray-700 rounded-xl hover:bg-gray-50 transition-all duration-200 font-medium transform hover:scale-105"
+            className="px-6 py-3 border border-gray-300 text-gray-700 rounded-xl hover:bg-gray-50 transition-all duration-200 font-medium transform hover:scale-105 w-full sm:w-auto"
           >
             {cancelText}
           </button>
           <button
             onClick={onConfirm}
-            className={`px-6 py-3 text-white rounded-xl transition-all duration-200 font-medium transform hover:scale-105 ${
-              type === 'danger' 
-                ? 'bg-red-500 hover:bg-red-600 shadow-lg hover:shadow-xl' 
+            className={`px-6 py-3 text-white rounded-xl transition-all duration-200 font-medium transform hover:scale-105 w-full sm:w-auto ${
+              type === 'danger'
+                ? 'bg-red-500 hover:bg-red-600 shadow-lg hover:shadow-xl'
                 : type === 'warning'
                 ? 'bg-yellow-500 hover:bg-yellow-600 shadow-lg hover:shadow-xl'
                 : 'bg-green-500 hover:bg-green-600 shadow-lg hover:shadow-xl'
@@ -133,7 +125,6 @@ const ConfirmationModal = ({
     </div>
   );
 };
-
 // Enhanced Success Toast Component
 const SuccessToast = ({ message, isVisible, onClose }: {
   message: string;
@@ -148,18 +139,16 @@ const SuccessToast = ({ message, isVisible, onClose }: {
       return () => clearTimeout(timer);
     }
   }, [isVisible, onClose]);
-
   if (!isVisible) return null;
-
   return (
-    <div className="fixed top-4 right-4 z-50 animate-slide-in-right">
-      <div className="bg-gradient-to-r from-green-500 to-green-600 text-white p-4 rounded-2xl shadow-2xl flex items-center space-x-3 max-w-sm border border-green-200">
+    <div className="fixed top-4 right-4 z-50 animate-slide-in-right w-full max-w-sm mx-auto sm:mx-0">
+      <div className="bg-gradient-to-r from-green-500 to-green-600 text-white p-4 rounded-2xl shadow-2xl flex items-center space-x-3 border border-green-200">
         <div className="p-1 bg-white/20 rounded-lg">
           <CheckCircle className="h-5 w-5" />
         </div>
         <span className="font-medium flex-1">{message}</span>
-        <button 
-          onClick={onClose} 
+        <button
+          onClick={onClose}
           className="text-white/80 hover:text-white transition-colors duration-200 p-1 rounded-lg hover:bg-white/10"
         >
           <X className="h-4 w-4" />
@@ -168,10 +157,8 @@ const SuccessToast = ({ message, isVisible, onClose }: {
     </div>
   );
 };
-
 const processTypes = ['Wash and Dry', 'Purifying', 'Grinding', 'Extracting', 'Mixing', 'Packaging'];
 const unitTypes = ['kg', 'g', 'lb', 'oz', 'L', 'mL', 'pieces', 'packets'];
-
 const Inventory = () => {
   const [rawMaterials, setRawMaterials] = useState<RawMaterial[]>([]);
   const [addFormData, setAddFormData] = useState({
@@ -200,14 +187,12 @@ const Inventory = () => {
   const [materialToDelete, setMaterialToDelete] = useState<string | null>(null);
   const [showSuccessToast, setShowSuccessToast] = useState(false);
   const [successMessage, setSuccessMessage] = useState('');
-
   // Enhanced success handler
   const showSuccessMessage = (message: string) => {
     setSuccessMessage(message);
     setShowSuccessToast(true);
     setTimeout(() => setShowSuccessToast(false), 4000);
   };
-
   useEffect(() => {
     const fetchRawMaterials = async () => {
       try {
@@ -226,14 +211,12 @@ const Inventory = () => {
     };
     fetchRawMaterials();
   }, []);
-
   const getMaterialStatus = (material: RawMaterial): 'optimal' | 'low' | 'critical' => {
     const usagePercentage = (material.usableQuantity / material.lowStockThreshold) * 100;
     if (usagePercentage <= 25) return 'critical';
     if (usagePercentage <= 50) return 'low';
     return 'optimal';
   };
-
   const getStatusColor = (status: string) => {
     switch (status) {
       case 'critical': return 'bg-red-500';
@@ -242,7 +225,6 @@ const Inventory = () => {
       default: return 'bg-gray-500';
     }
   };
-
   const getStatusText = (status: string) => {
     switch (status) {
       case 'critical': return 'Critical';
@@ -251,7 +233,6 @@ const Inventory = () => {
       default: return 'Unknown';
     }
   };
-
   const handleAddSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
@@ -282,7 +263,6 @@ const Inventory = () => {
       setError('Failed to add raw material: ' + (error.response?.data?.error || error.message));
     }
   };
-
   const handleProcessSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
@@ -311,7 +291,6 @@ const Inventory = () => {
       setError('Failed to process raw material: ' + (error.response?.data?.error || error.message));
     }
   };
-
   const handleEditSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editData) return;
@@ -341,12 +320,10 @@ const Inventory = () => {
       setError('Failed to edit raw material: ' + (error.response?.data?.error || error.message));
     }
   };
-
   const handleDelete = async (id: string) => {
     setMaterialToDelete(id);
     setShowDeleteModal(true);
   };
-
   const confirmDelete = async () => {
     if (!materialToDelete) return;
     
@@ -363,7 +340,6 @@ const Inventory = () => {
       setMaterialToDelete(null);
     }
   };
-
   const handleEditChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!editData) return;
     setEditData({
@@ -371,7 +347,6 @@ const Inventory = () => {
       [e.target.name]: Number(e.target.value),
     });
   };
-
   // Enhanced filtering and sorting
   const filteredAndSortedMaterials = rawMaterials
     .filter(material => {
@@ -405,7 +380,6 @@ const Inventory = () => {
         return aValue > bValue ? -1 : aValue < bValue ? 1 : 0;
       }
     });
-
   const toggleSort = (field: 'name' | 'quantity' | 'status') => {
     if (sortBy === field) {
       setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
@@ -414,7 +388,6 @@ const Inventory = () => {
       setSortOrder('asc');
     }
   };
-
   // Calculate enhanced statistics
   const totalMaterials = rawMaterials.length;
   const lowStockCount = rawMaterials.filter(rm => rm.status === 'low').length;
@@ -422,7 +395,6 @@ const Inventory = () => {
   const totalWastage = rawMaterials.reduce((sum, rm) => sum + rm.wastage, 0);
   const totalUsable = rawMaterials.reduce((sum, rm) => sum + rm.usableQuantity, 0);
   const wastagePercentage = totalUsable > 0 ? (totalWastage / (totalUsable + totalWastage)) * 100 : 0;
-
   const formatDate = (dateString: string) => {
     return new Date(dateString).toLocaleDateString('en-US', {
       year: 'numeric',
@@ -432,16 +404,14 @@ const Inventory = () => {
       minute: '2-digit'
     });
   };
-
   return (
     <div className="min-h-screen" style={{ backgroundColor: colors.background }}>
       {/* Success Toast */}
-      <SuccessToast 
-        message={successMessage} 
-        isVisible={showSuccessToast} 
-        onClose={() => setShowSuccessToast(false)} 
+      <SuccessToast
+        message={successMessage}
+        isVisible={showSuccessToast}
+        onClose={() => setShowSuccessToast(false)}
       />
-
       {/* Delete Confirmation Modal */}
       <ConfirmationModal
         isOpen={showDeleteModal}
@@ -455,22 +425,21 @@ const Inventory = () => {
         confirmText="Delete Material"
         type="danger"
       />
-
-      <div className="p-6 max-w-7xl mx-auto">
+      <div className="p-4 sm:p-6 max-w-7xl mx-auto">
         {/* Enhanced Header Section */}
         <div className="mb-8">
           <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between space-y-6 lg:space-y-0">
             <div className="flex items-center space-x-4">
-              <div 
+              <div
                 className="p-4 rounded-2xl shadow-lg transition-all duration-300 hover:scale-105 hover:shadow-xl"
                 style={{ backgroundColor: colors.primary }}
               >
                 <Warehouse className="h-8 w-8 text-white" />
               </div>
               <div>
-                <h1 
-                  className="text-4xl font-bold transition-all duration-500"
-                  style={{ 
+                <h1
+                  className="text-3xl sm:text-4xl font-bold transition-all duration-500"
+                  style={{
                     color: colors.primary,
                     textShadow: '0 2px 4px rgba(15, 130, 140, 0.1)'
                   }}
@@ -483,7 +452,7 @@ const Inventory = () => {
             
             {/* Enhanced Stats Cards */}
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-              <div 
+              <div
                 className="bg-white rounded-2xl p-4 shadow-lg border border-gray-200 transition-all duration-300 hover:shadow-xl hover:scale-105"
                 style={{ borderLeft: `4px solid ${colors.primary}` }}
               >
@@ -492,7 +461,7 @@ const Inventory = () => {
                     <div className="text-sm text-gray-500 font-medium">Total Materials</div>
                     <div className="text-2xl font-bold" style={{ color: colors.primary }}>{totalMaterials}</div>
                   </div>
-                  <div 
+                  <div
                     className="p-2 rounded-lg"
                     style={{ backgroundColor: `${colors.primary}15` }}
                   >
@@ -501,7 +470,7 @@ const Inventory = () => {
                 </div>
               </div>
               
-              <div 
+              <div
                 className="bg-white rounded-2xl p-4 shadow-lg border border-gray-200 transition-all duration-300 hover:shadow-xl hover:scale-105"
                 style={{ borderLeft: `4px solid ${colors.warning}` }}
               >
@@ -516,7 +485,7 @@ const Inventory = () => {
                 </div>
               </div>
               
-              <div 
+              <div
                 className="bg-white rounded-2xl p-4 shadow-lg border border-gray-200 transition-all duration-300 hover:shadow-xl hover:scale-105"
                 style={{ borderLeft: `4px solid ${colors.error}` }}
               >
@@ -531,7 +500,7 @@ const Inventory = () => {
                 </div>
               </div>
               
-              <div 
+              <div
                 className="bg-white rounded-2xl p-4 shadow-lg border border-gray-200 transition-all duration-300 hover:shadow-xl hover:scale-105"
                 style={{ borderLeft: `4px solid ${colors.success}` }}
               >
@@ -548,7 +517,6 @@ const Inventory = () => {
             </div>
           </div>
         </div>
-
         {/* Enhanced Error Display */}
         {error && (
           <div className="mb-6 bg-red-50 border-l-4 border-red-500 text-red-700 p-4 rounded-xl flex items-center space-x-3 animate-fade-in shadow-lg">
@@ -559,12 +527,11 @@ const Inventory = () => {
             </button>
           </div>
         )}
-
         {/* Enhanced Action Bar */}
-        <div className="bg-white rounded-2xl shadow-xl border border-gray-200 mb-8 p-6 animate-slide-down">
+        <div className="bg-white rounded-2xl shadow-xl border border-gray-200 mb-8 p-4 sm:p-6 animate-slide-down">
           <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between space-y-4 lg:space-y-0">
-            <div className="flex flex-wrap items-center gap-4">
-              <div className="relative flex-1 min-w-[300px]">
+            <div className="flex flex-wrap items-center gap-4 w-full lg:w-auto">
+              <div className="relative flex-1 w-full sm:min-w-[300px]">
                 <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                   <Search className="h-5 w-5 text-gray-400" />
                 </div>
@@ -584,7 +551,7 @@ const Inventory = () => {
                   setSortBy(field as 'name' | 'quantity' | 'status');
                   setSortOrder(order as 'asc' | 'desc');
                 }}
-                className="px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 bg-gray-50/50"
+                className="px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 bg-gray-50/50 w-full sm:w-auto"
               >
                 <option value="name-asc">Name A-Z</option>
                 <option value="name-desc">Name Z-A</option>
@@ -593,12 +560,11 @@ const Inventory = () => {
                 <option value="status-asc">Status Critical-First</option>
                 <option value="status-desc">Status Optimal-First</option>
               </select>
-
               <button
                 onClick={() => setLowStockFilter(!lowStockFilter)}
-                className={`flex items-center space-x-2 px-4 py-3 rounded-xl transition-all duration-200 transform hover:scale-105 ${
-                  lowStockFilter 
-                    ? 'text-white shadow-lg' 
+                className={`flex items-center space-x-2 px-4 py-3 rounded-xl transition-all duration-200 transform hover:scale-105 w-full sm:w-auto ${
+                  lowStockFilter
+                    ? 'text-white shadow-lg'
                     : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
                 }`}
                 style={lowStockFilter ? { backgroundColor: colors.warning } : {}}
@@ -608,24 +574,24 @@ const Inventory = () => {
               </button>
             </div>
             
-            <div className="flex items-center space-x-3">
-              <button className="flex items-center space-x-2 bg-gray-100 hover:bg-gray-200 text-gray-700 px-4 py-3 rounded-xl transition-all duration-200 transform hover:scale-105">
+            <div className="flex flex-col sm:flex-row items-center gap-3 sm:gap-3 w-full lg:w-auto">
+              <button className="flex items-center space-x-2 justify-center bg-gray-100 hover:bg-gray-200 text-gray-700 px-4 py-3 rounded-xl transition-all duration-200 transform hover:scale-105 w-full sm:w-auto">
                 <Download className="h-4 w-4" />
                 <span>Export</span>
               </button>
               
-              <button 
+              <button
                 onClick={() => setShowProcessForm(!showProcessForm)}
-                className="flex items-center space-x-2 text-white px-6 py-3 rounded-xl transition-all duration-300 shadow-lg hover:shadow-xl transform hover:scale-105"
+                className="flex items-center space-x-2 justify-center text-white px-6 py-3 rounded-xl transition-all duration-300 shadow-lg hover:shadow-xl transform hover:scale-105 w-full sm:w-auto"
                 style={{ backgroundColor: colors.accent }}
               >
                 <TrendingUp className="h-5 w-5" />
                 <span className="font-semibold">Process Material</span>
               </button>
               
-              <button 
+              <button
                 onClick={() => setShowAddForm(!showAddForm)}
-                className="flex items-center space-x-2 text-white px-6 py-3 rounded-xl transition-all duration-300 shadow-lg hover:shadow-xl transform hover:scale-105"
+                className="flex items-center space-x-2 justify-center text-white px-6 py-3 rounded-xl transition-all duration-300 shadow-lg hover:shadow-xl transform hover:scale-105 w-full sm:w-auto"
                 style={{ backgroundColor: colors.primary }}
               >
                 <Plus className="h-5 w-5" />
@@ -634,30 +600,29 @@ const Inventory = () => {
             </div>
           </div>
         </div>
-
         {/* Enhanced Add Material Form */}
         {showAddForm && (
           <div className="bg-white rounded-2xl shadow-xl border border-gray-200 mb-8 overflow-hidden animate-slide-down">
-            <div 
-              className="p-6 transition-all duration-500"
+            <div
+              className="p-4 sm:p-6 transition-all duration-500"
               style={{ background: colors.gradient }}
             >
-              <h2 className="text-2xl font-bold text-white flex items-center space-x-3">
+              <h2 className="text-xl sm:text-2xl font-bold text-white flex items-center space-x-3">
                 <Plus className="h-6 w-6" />
                 <span>Add New Raw Material</span>
               </h2>
             </div>
             
-            <div className="p-6">
-              <form onSubmit={handleAddSubmit} className="space-y-6">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className="p-4 sm:p-6">
+              <form onSubmit={handleAddSubmit} className="space-y-4 sm:space-y-6">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6">
                   <div className="space-y-2">
                     <label className="block text-sm font-semibold text-gray-700">Material Name</label>
                     <input
                       type="text"
                       value={addFormData.name}
                       onChange={(e) => setAddFormData({ ...addFormData, name: e.target.value })}
-                      className="w-full p-4 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 bg-gray-50/50"
+                      className="w-full p-3 sm:p-4 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 bg-gray-50/50"
                       placeholder="Enter material name"
                       required
                     />
@@ -669,21 +634,20 @@ const Inventory = () => {
                       type="number"
                       value={addFormData.initialQuantity}
                       onChange={(e) => setAddFormData({ ...addFormData, initialQuantity: Number(e.target.value) })}
-                      className="w-full p-4 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 bg-gray-50/50"
+                      className="w-full p-3 sm:p-4 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 bg-gray-50/50"
                       placeholder="0"
                       min="0"
                       step="0.01"
                       required
                     />
                   </div>
-
                   <div className="space-y-2">
                     <label className="block text-sm font-semibold text-gray-700">Unit</label>
                     <div className="relative">
                       <select
                         value={addFormData.unit}
                         onChange={(e) => setAddFormData({ ...addFormData, unit: e.target.value })}
-                        className="w-full p-4 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 appearance-none bg-gray-50/50"
+                        className="w-full p-3 sm:p-4 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 appearance-none bg-gray-50/50"
                         required
                       >
                         <option value="">Select Unit</option>
@@ -696,14 +660,13 @@ const Inventory = () => {
                       <Scale className="absolute right-4 top-4 h-4 w-4 text-gray-400 pointer-events-none" />
                     </div>
                   </div>
-
                   <div className="space-y-2">
                     <label className="block text-sm font-semibold text-gray-700">Low Stock Threshold</label>
                     <input
                       type="number"
                       value={addFormData.lowStockThreshold}
                       onChange={(e) => setAddFormData({ ...addFormData, lowStockThreshold: Number(e.target.value) })}
-                      className="w-full p-4 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 bg-gray-50/50"
+                      className="w-full p-3 sm:p-4 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 bg-gray-50/50"
                       placeholder="0"
                       min="0"
                       step="0.01"
@@ -712,17 +675,17 @@ const Inventory = () => {
                   </div>
                 </div>
                 
-                <div className="flex justify-end space-x-3 pt-4">
-                  <button 
+                <div className="flex flex-col sm:flex-row justify-end space-y-3 sm:space-y-0 sm:space-x-3 pt-4">
+                  <button
                     type="button"
                     onClick={() => setShowAddForm(false)}
-                    className="px-6 py-3 border border-gray-300 text-gray-700 rounded-xl hover:bg-gray-50 transition-all duration-200 font-medium transform hover:scale-105"
+                    className="px-6 py-3 border border-gray-300 text-gray-700 rounded-xl hover:bg-gray-50 transition-all duration-200 font-medium transform hover:scale-105 w-full sm:w-auto"
                   >
                     Cancel
                   </button>
-                  <button 
-                    type="submit" 
-                    className="flex items-center space-x-2 text-white px-6 py-3 rounded-xl transition-all duration-300 shadow-lg hover:shadow-xl transform hover:scale-105"
+                  <button
+                    type="submit"
+                    className="flex items-center space-x-2 justify-center text-white px-6 py-3 rounded-xl transition-all duration-300 shadow-lg hover:shadow-xl transform hover:scale-105 w-full sm:w-auto"
                     style={{ backgroundColor: colors.success }}
                   >
                     <CheckCircle className="h-5 w-5" />
@@ -733,29 +696,28 @@ const Inventory = () => {
             </div>
           </div>
         )}
-
         {/* Enhanced Process Material Form */}
         {showProcessForm && (
           <div className="bg-white rounded-2xl shadow-xl border border-gray-200 mb-8 overflow-hidden animate-slide-down">
-            <div 
-              className="p-6 transition-all duration-500"
+            <div
+              className="p-4 sm:p-6 transition-all duration-500"
               style={{ background: colors.gradientHover }}
             >
-              <h2 className="text-2xl font-bold text-white flex items-center space-x-3">
+              <h2 className="text-xl sm:text-2xl font-bold text-white flex items-center space-x-3">
                 <TrendingUp className="h-6 w-6" />
                 <span>Process Raw Material</span>
               </h2>
             </div>
             
-            <div className="p-6">
-              <form onSubmit={handleProcessSubmit} className="space-y-6">
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <div className="p-4 sm:p-6">
+              <form onSubmit={handleProcessSubmit} className="space-y-4 sm:space-y-6">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 sm:gap-6">
                   <div className="space-y-2">
                     <label className="block text-sm font-semibold text-gray-700">Select Material</label>
                     <select
                       value={processData.materialId}
                       onChange={(e) => setProcessData({ ...processData, materialId: e.target.value })}
-                      className="w-full p-4 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 bg-gray-50/50"
+                      className="w-full p-3 sm:p-4 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 bg-gray-50/50"
                       required
                     >
                       <option value="">Select Material</option>
@@ -766,13 +728,12 @@ const Inventory = () => {
                       ))}
                     </select>
                   </div>
-
                   <div className="space-y-2">
                     <label className="block text-sm font-semibold text-gray-700">Process Type</label>
                     <select
                       value={processData.processType}
                       onChange={(e) => setProcessData({ ...processData, processType: e.target.value })}
-                      className="w-full p-4 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 bg-gray-50/50"
+                      className="w-full p-3 sm:p-4 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 bg-gray-50/50"
                       required
                     >
                       <option value="">Select Process</option>
@@ -783,14 +744,13 @@ const Inventory = () => {
                       ))}
                     </select>
                   </div>
-
                   <div className="space-y-2">
                     <label className="block text-sm font-semibold text-gray-700">Processed Quantity</label>
                     <input
                       type="number"
                       value={processData.processedQuantity}
                       onChange={(e) => setProcessData({ ...processData, processedQuantity: Number(e.target.value) })}
-                      className="w-full p-4 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 bg-gray-50/50"
+                      className="w-full p-3 sm:p-4 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 bg-gray-50/50"
                       placeholder="0"
                       min="0"
                       step="0.01"
@@ -799,17 +759,17 @@ const Inventory = () => {
                   </div>
                 </div>
                 
-                <div className="flex justify-end space-x-3 pt-4">
-                  <button 
+                <div className="flex flex-col sm:flex-row justify-end space-y-3 sm:space-y-0 sm:space-x-3 pt-4">
+                  <button
                     type="button"
                     onClick={() => setShowProcessForm(false)}
-                    className="px-6 py-3 border border-gray-300 text-gray-700 rounded-xl hover:bg-gray-50 transition-all duration-200 font-medium transform hover:scale-105"
+                    className="px-6 py-3 border border-gray-300 text-gray-700 rounded-xl hover:bg-gray-50 transition-all duration-200 font-medium transform hover:scale-105 w-full sm:w-auto"
                   >
                     Cancel
                   </button>
-                  <button 
-                    type="submit" 
-                    className="flex items-center space-x-2 text-white px-6 py-3 rounded-xl transition-all duration-300 shadow-lg hover:shadow-xl transform hover:scale-105"
+                  <button
+                    type="submit"
+                    className="flex items-center space-x-2 justify-center text-white px-6 py-3 rounded-xl transition-all duration-300 shadow-lg hover:shadow-xl transform hover:scale-105 w-full sm:w-auto"
                     style={{ backgroundColor: colors.accent }}
                   >
                     <TrendingUp className="h-5 w-5" />
@@ -820,15 +780,14 @@ const Inventory = () => {
             </div>
           </div>
         )}
-
         {/* Enhanced Materials Display */}
         <div className="bg-white rounded-2xl shadow-xl border border-gray-200 overflow-hidden animate-fade-in">
-          <div 
-            className="p-6 transition-all duration-500"
+          <div
+            className="p-4 sm:p-6 transition-all duration-500"
             style={{ background: colors.gradient }}
           >
             <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between space-y-4 lg:space-y-0">
-              <h2 className="text-2xl font-bold text-white flex items-center space-x-3">
+              <h2 className="text-xl sm:text-2xl font-bold text-white flex items-center space-x-3">
                 <Package className="h-6 w-6" />
                 <span>Raw Materials Inventory</span>
                 <span className="bg-white/20 px-3 py-1 rounded-full text-sm font-medium">
@@ -839,16 +798,15 @@ const Inventory = () => {
               <div className="flex items-center space-x-2 text-white/80">
                 <BarChart3 className="h-4 w-4" />
                 <span>
-                  {filteredAndSortedMaterials.length > 0 
-                    ? `Showing ${filteredAndSortedMaterials.length} materials` 
+                  {filteredAndSortedMaterials.length > 0
+                    ? `Showing ${filteredAndSortedMaterials.length} materials`
                     : 'No materials found'
                   }
                 </span>
               </div>
             </div>
           </div>
-
-          <div className="p-6">
+          <div className="p-4 sm:p-6">
             {filteredAndSortedMaterials.length === 0 ? (
               <div className="text-center py-12 animate-pulse">
                 <Package className="h-16 w-16 text-gray-300 mx-auto mb-4" />
@@ -856,14 +814,14 @@ const Inventory = () => {
                   {searchQuery || lowStockFilter ? 'No materials found' : 'No raw materials available'}
                 </h3>
                 <p className="text-gray-500 mb-6">
-                  {searchQuery 
-                    ? 'Try adjusting your search terms' 
-                    : lowStockFilter 
-                    ? 'No low stock items found' 
+                  {searchQuery
+                    ? 'Try adjusting your search terms'
+                    : lowStockFilter
+                    ? 'No low stock items found'
                     : 'Start by adding your first raw material'
                   }
                 </p>
-                <button 
+                <button
                   onClick={() => {
                     setSearchQuery('');
                     setLowStockFilter(false);
@@ -878,19 +836,19 @@ const Inventory = () => {
               </div>
             ) : (
               <div className="overflow-x-auto rounded-2xl border border-gray-200">
-                <table className="w-full">
+                <table className="w-full min-w-[800px] sm:min-w-[1000px]">
                   <thead>
                     <tr className="bg-gray-50 border-b border-gray-200">
-                      <th className="p-4 text-left text-sm font-semibold text-gray-700">Material</th>
-                      <th className="p-4 text-left text-sm font-semibold text-gray-700">Initial Qty</th>
-                      <th className="p-4 text-left text-sm font-semibold text-gray-700">Processed Qty</th>
-                      <th className="p-4 text-left text-sm font-semibold text-gray-700">Wastage</th>
-                      <th className="p-4 text-left text-sm font-semibold text-gray-700">Usable Qty</th>
-                      <th className="p-4 text-left text-sm font-semibold text-gray-700">Unit</th>
-                      <th className="p-4 text-left text-sm font-semibold text-gray-700">Threshold</th>
-                      <th className="p-4 text-left text-sm font-semibold text-gray-700">Status</th>
-                      <th className="p-4 text-left text-sm font-semibold text-gray-700">Last Updated</th>
-                      <th className="p-4 text-left text-sm font-semibold text-gray-700">Actions</th>
+                      <th className="p-2 sm:p-4 text-left text-xs sm:text-sm font-semibold text-gray-700">Material</th>
+                      <th className="p-2 sm:p-4 text-left text-xs sm:text-sm font-semibold text-gray-700">Initial Qty</th>
+                      <th className="p-2 sm:p-4 text-left text-xs sm:text-sm font-semibold text-gray-700">Processed Qty</th>
+                      <th className="p-2 sm:p-4 text-left text-xs sm:text-sm font-semibold text-gray-700">Wastage</th>
+                      <th className="p-2 sm:p-4 text-left text-xs sm:text-sm font-semibold text-gray-700">Usable Qty</th>
+                      <th className="p-2 sm:p-4 text-left text-xs sm:text-sm font-semibold text-gray-700">Unit</th>
+                      <th className="p-2 sm:p-4 text-left text-xs sm:text-sm font-semibold text-gray-700">Threshold</th>
+                      <th className="p-2 sm:p-4 text-left text-xs sm:text-sm font-semibold text-gray-700">Status</th>
+                      <th className="p-2 sm:p-4 text-left text-xs sm:text-sm font-semibold text-gray-700">Last Updated</th>
+                      <th className="p-2 sm:p-4 text-left text-xs sm:text-sm font-semibold text-gray-700">Actions</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -899,64 +857,64 @@ const Inventory = () => {
                       const isLowStock = rm.status !== 'optimal';
                       
                       return (
-                        <tr 
-                          key={rm._id} 
+                        <tr
+                          key={rm._id}
                           className={`border-b border-gray-100 hover:bg-blue-50/30 transition-all duration-150 group ${
                             isLowStock ? 'bg-red-50/50' : ''
                           }`}
                         >
-                          <td className="p-4">
-                            <div className="font-semibold text-gray-900 group-hover:text-blue-600 transition-colors duration-200">
+                          <td className="p-2 sm:p-4">
+                            <div className="font-semibold text-gray-900 group-hover:text-blue-600 transition-colors duration-200 text-sm sm:text-base">
                               {rm.name}
                             </div>
                           </td>
                           
-                          <td className="p-4">
+                          <td className="p-2 sm:p-4">
                             {editData && editData._id === rm._id ? (
                               <input
                                 type="number"
                                 name="initialQuantity"
                                 value={editData.initialQuantity}
                                 onChange={handleEditChange}
-                                className="w-24 p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 bg-white"
+                                className="w-full sm:w-24 p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 bg-white"
                                 min="0"
                                 step="0.01"
                               />
                             ) : (
-                              <div className="text-gray-600 font-medium">{rm.initialQuantity}</div>
+                              <div className="text-gray-600 font-medium text-sm sm:text-base">{rm.initialQuantity}</div>
                             )}
                           </td>
                           
-                          <td className="p-4">
+                          <td className="p-2 sm:p-4">
                             {editData && editData._id === rm._id ? (
                               <input
                                 type="number"
                                 name="processedQuantity"
                                 value={editData.processedQuantity}
                                 onChange={handleEditChange}
-                                className="w-24 p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 bg-white"
+                                className="w-full sm:w-24 p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 bg-white"
                                 min="0"
                                 step="0.01"
                               />
                             ) : (
-                              <div className="text-gray-600 font-medium">{rm.processedQuantity}</div>
+                              <div className="text-gray-600 font-medium text-sm sm:text-base">{rm.processedQuantity}</div>
                             )}
                           </td>
                           
-                          <td className="p-4">
+                          <td className="p-2 sm:p-4">
                             {editData && editData._id === rm._id ? (
                               <input
                                 type="number"
                                 name="wastage"
                                 value={editData.wastage}
                                 onChange={handleEditChange}
-                                className="w-24 p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 bg-white"
+                                className="w-full sm:w-24 p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 bg-white"
                                 min="0"
                                 step="0.01"
                               />
                             ) : (
                               <div className="flex items-center space-x-2">
-                                <span className="text-red-600 font-medium">{rm.wastage.toFixed(2)}</span>
+                                <span className="text-red-600 font-medium text-sm sm:text-base">{rm.wastage.toFixed(2)}</span>
                                 <span className="text-xs text-gray-500 bg-gray-100 px-2 py-1 rounded">
                                   {wastagePercentage.toFixed(1)}%
                                 </span>
@@ -964,7 +922,7 @@ const Inventory = () => {
                             )}
                           </td>
                           
-                          <td className="p-4">
+                          <td className="p-2 sm:p-4">
                             <div className={`font-bold text-lg ${
                               rm.status === 'critical' ? 'text-red-600' :
                               rm.status === 'low' ? 'text-orange-600' : 'text-green-600'
@@ -973,18 +931,18 @@ const Inventory = () => {
                             </div>
                           </td>
                           
-                          <td className="p-4">
-                            <div className="text-gray-600 font-medium bg-gray-100 px-3 py-1 rounded-lg inline-block">
+                          <td className="p-2 sm:p-4">
+                            <div className="text-gray-600 font-medium bg-gray-100 px-3 py-1 rounded-lg inline-block text-sm sm:text-base">
                               {rm.unit}
                             </div>
                           </td>
                           
-                          <td className="p-4">
-                            <div className="text-gray-600 font-medium">{rm.lowStockThreshold}</div>
+                          <td className="p-2 sm:p-4">
+                            <div className="text-gray-600 font-medium text-sm sm:text-base">{rm.lowStockThreshold}</div>
                           </td>
                           
-                          <td className="p-4">
-                            <div className={`flex items-center space-x-2 px-3 py-1 rounded-full text-sm font-medium ${
+                          <td className="p-2 sm:p-4">
+                            <div className={`flex items-center space-x-2 px-3 py-1 rounded-full text-xs sm:text-sm font-medium ${
                               rm.status === 'critical' ? 'bg-red-100 text-red-800' :
                               rm.status === 'low' ? 'bg-orange-100 text-orange-800' : 'bg-green-100 text-green-800'
                             }`}>
@@ -993,18 +951,18 @@ const Inventory = () => {
                             </div>
                           </td>
                           
-                          <td className="p-4">
-                            <div className="text-sm text-gray-500">
+                          <td className="p-2 sm:p-4">
+                            <div className="text-xs sm:text-sm text-gray-500">
                               {rm.lastUpdated ? formatDate(rm.lastUpdated) : 'N/A'}
                             </div>
                           </td>
                           
-                          <td className="p-4">
+                          <td className="p-2 sm:p-4">
                             {editData && editData._id === rm._id ? (
-                              <div className="flex items-center space-x-2">
+                              <div className="flex flex-col sm:flex-row items-center space-y-2 sm:space-y-0 sm:space-x-2 w-full sm:w-auto">
                                 <button
                                   onClick={handleEditSubmit}
-                                  className="flex items-center space-x-1 text-white px-3 py-2 rounded-xl hover:shadow-lg transition-all duration-200 transform hover:scale-105"
+                                  className="flex items-center space-x-1 justify-center text-white px-3 py-2 rounded-xl hover:shadow-lg transition-all duration-200 transform hover:scale-105 w-full sm:w-auto"
                                   style={{ backgroundColor: colors.success }}
                                 >
                                   <Save className="h-3 w-3" />
@@ -1012,17 +970,17 @@ const Inventory = () => {
                                 </button>
                                 <button
                                   onClick={() => setEditData(null)}
-                                  className="flex items-center space-x-1 bg-gray-500 text-white px-3 py-2 rounded-xl hover:bg-gray-600 transition-all duration-200 transform hover:scale-105"
+                                  className="flex items-center space-x-1 justify-center bg-gray-500 text-white px-3 py-2 rounded-xl hover:bg-gray-600 transition-all duration-200 transform hover:scale-105 w-full sm:w-auto"
                                 >
                                   <RotateCcw className="h-3 w-3" />
                                   <span className="font-medium">Cancel</span>
                                 </button>
                               </div>
                             ) : (
-                              <div className="flex items-center space-x-2">
+                              <div className="flex flex-col sm:flex-row items-center space-y-2 sm:space-y-0 sm:space-x-2 w-full sm:w-auto">
                                 <button
                                   onClick={() => setEditData(rm)}
-                                  className="flex items-center space-x-1 text-white px-3 py-2 rounded-xl hover:shadow-lg transition-all duration-200 transform hover:scale-105"
+                                  className="flex items-center space-x-1 justify-center text-white px-3 py-2 rounded-xl hover:shadow-lg transition-all duration-200 transform hover:scale-105 w-full sm:w-auto"
                                   style={{ backgroundColor: colors.primary }}
                                 >
                                   <Edit className="h-3 w-3" />
@@ -1030,7 +988,7 @@ const Inventory = () => {
                                 </button>
                                 <button
                                   onClick={() => handleDelete(rm._id)}
-                                  className="flex items-center space-x-1 bg-red-500 text-white px-3 py-2 rounded-xl hover:bg-red-600 transition-all duration-200 transform hover:scale-105"
+                                  className="flex items-center space-x-1 justify-center bg-red-500 text-white px-3 py-2 rounded-xl hover:bg-red-600 transition-all duration-200 transform hover:scale-105 w-full sm:w-auto"
                                 >
                                   <Trash2 className="h-3 w-3" />
                                   <span className="font-medium">Delete</span>
@@ -1048,7 +1006,6 @@ const Inventory = () => {
           </div>
         </div>
       </div>
-
       {/* Add CSS animations to global styles or use inline styles */}
       <style>{`
         @keyframes fade-in {
@@ -1083,5 +1040,4 @@ const Inventory = () => {
     </div>
   );
 };
-
 export default Inventory;

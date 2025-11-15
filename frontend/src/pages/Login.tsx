@@ -71,7 +71,7 @@ const Login = () => {
     <div className="mt-3 sm:mt-0">
       <div className="relative">
         <h1 className="text-3xl sm:text-4xl lg:text-5xl xl:text-6xl font-black bg-gradient-to-r from-[#26667F] via-[#1a4d8c] to-[#124170] bg-clip-text text-transparent leading-[1.25] tracking-normal pb-2.5">
-  AyuSys Pro
+  Aura
 </h1>
 
         

@@ -160,12 +160,14 @@ const PackingAdmin = ({ socket }: { socket?: any }) => {
   useEffect(() => {
     if (!socket) return;
 
-    // Packer events
+    // Packer events - FIXED: Use consistent event names and proper state updates
     const onPackerCreated = (packer: Packer) => {
+      console.log('Packer created via socket:', packer);
       setPackers(prev => [...prev, { ...packer, completedOrders: 0 }]);
     };
 
     const onPackerUpdated = (updated: Packer) => {
+      console.log('Packer updated via socket:', updated);
       setPackers(prev => prev.map(p => p._id === updated._id ? { ...p, ...updated } : p));
       if (selectedPacker?._id === updated._id) {
         setSelectedPacker(prev => prev ? { ...prev, ...updated } : null);
@@ -217,7 +219,7 @@ const PackingAdmin = ({ socket }: { socket?: any }) => {
       setTimeout(() => setSuccess(''), 3000);
     };
 
-    // Socket event listeners
+    // Socket event listeners - FIXED: Use consistent event names
     socket.on('packers:created', onPackerCreated);
     socket.on('packers:updated', onPackerUpdated);
     socket.on('packers:deleted', onPackerDeleted);
@@ -363,6 +365,7 @@ const PackingAdmin = ({ socket }: { socket?: any }) => {
     }
   };
 
+  // FIXED: Update packer function with proper state updates
   const updatePacker = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingPacker) return;
@@ -379,10 +382,13 @@ const PackingAdmin = ({ socket }: { socket?: any }) => {
         isActive: editingPacker.isActive
       });
       
-      setPackers(packers.map(p => p._id === editingPacker._id ? res.data : p));
+      // FIXED: Use functional update and ensure state is updated
+      setPackers(prev => prev.map(p => p._id === editingPacker._id ? { ...p, ...res.data } : p));
+      
       if (selectedPacker?._id === editingPacker._id) {
         setSelectedPacker(res.data);
       }
+      
       setEditingPacker(null);
       setSuccess('Packer updated successfully');
       setTimeout(() => setSuccess(''), 3000);
@@ -408,6 +414,7 @@ const PackingAdmin = ({ socket }: { socket?: any }) => {
   };
 
   // Order CRUD Operations
+  // FIXED: Update order function to handle the new fields properly
   const updateOrder = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingOrder) return;
@@ -418,12 +425,19 @@ const PackingAdmin = ({ socket }: { socket?: any }) => {
         shippingAddress: orderEditForm.shippingAddress
       });
       
-      setOrders(orders.map(o => o._id === editingOrder._id ? res.data : o));
+      setOrders(prev => prev.map(o => o._id === editingOrder._id ? res.data : o));
+      
+      // Also update selected order if it's the same
+      if (selectedOrder?._id === editingOrder._id) {
+        setSelectedOrder(res.data);
+      }
+      
       setEditingOrder(null);
       setShowEditOrderModal(false);
       setSuccess('Order updated successfully');
       setTimeout(() => setSuccess(''), 3000);
     } catch (err: any) {
+      console.error('Order update error:', err);
       setError('Failed to update order: ' + (err.response?.data?.error || err.message));
     }
   };
@@ -665,11 +679,20 @@ const PackingAdmin = ({ socket }: { socket?: any }) => {
                         <div className="w-10 h-10 rounded-lg bg-slate-100 flex items-center justify-center">
                           <User className="h-5 w-5 text-slate-600" />
                         </div>
-                        <div className={`absolute -bottom-1 -right-1 w-2 h-2 rounded-full border-2 border-white ${packer.isActive ? 'bg-emerald-500' : 'bg-slate-400'}`} />
+                        {/* FIXED: Active status indicator */}
+                        <div className={`absolute -bottom-1 -right-1 w-3 h-3 rounded-full border-2 border-white ${
+                          packer.isActive ? 'bg-emerald-500' : 'bg-slate-400'
+                        }`} />
                       </div>
                       <div className="flex-1">
                         <h3 className="font-semibold text-slate-900 text-sm">{packer.name}</h3>
                         <p className="text-slate-600 text-xs">{packer.phone || 'No phone'}</p>
+                        {/* FIXED: Show active status text */}
+                        <p className={`text-xs font-medium ${
+                          packer.isActive ? 'text-emerald-600' : 'text-slate-500'
+                        }`}>
+                          {packer.isActive ? 'Active' : 'Inactive'}
+                        </p>
                       </div>
                     </div>
 

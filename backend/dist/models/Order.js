@@ -3,6 +3,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
+// models/Order.ts
 const mongoose_1 = __importDefault(require("mongoose"));
 const orderSchema = new mongoose_1.default.Schema({
     customer: { type: mongoose_1.default.Schema.Types.ObjectId, ref: 'Customer', required: true },
@@ -23,6 +24,15 @@ const orderSchema = new mongoose_1.default.Schema({
     barcode: { type: String, required: true },
     personalized: { type: Boolean, default: false },
     paymentMethod: { type: String, enum: ['Debit Card', 'Credit Card', 'Cash', 'Other'], required: true },
-    packer: { type: String }
+    packer: { type: String },
+    // ADD THESE MISSING FIELDS:
+    createdAt: { type: Date, default: Date.now },
+    shippingAddress: {
+        street: String,
+        city: String,
+        state: String,
+        country: String,
+        zipCode: String
+    }
 });
 exports.default = mongoose_1.default.model('Order', orderSchema);

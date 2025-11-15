@@ -38,5 +38,8 @@ const mongoose_1 = __importStar(require("mongoose"));
 const PackerSchema = new mongoose_1.Schema({
     name: { type: String, required: true },
     phone: { type: String },
+    isActive: { type: Boolean, default: false },
+    avatar: { type: String },
+    lastActive: { type: Date }
 });
 exports.default = mongoose_1.default.model('Packer', PackerSchema);

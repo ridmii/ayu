@@ -10,6 +10,8 @@ import customersRoutes from './routes/customers';
 import productsRouter from './routes/products';
 import packersRoutes from './routes/packers'; // New
 import packingRoutes from './routes/packing'; // Updated
+import dotenv from 'dotenv';
+dotenv.config({ path: '../.env' });
 
 const app = express();
 const server = http.createServer(app);
@@ -37,8 +39,11 @@ app.use('/api/products', productsRouter);
 app.use('/api/packers', packersRoutes); // New
 app.use('/api/packing', packingRoutes); // Updated
 
+console.log("Using MongoDB URI:", process.env.MONGODB_URI);
+
+
 mongoose
-  .connect(process.env.MONGODB_URI || 'mongodb+srv://ridmi:ayu123@ayusys.moyaii5.mongodb.net/?retryWrites=true&w=majority&appName=AyuSys')
+  .connect(process.env.MONGODB_URI || 'mongodb+srv://auracatcode_db_user:GrFMcN76mITMDkp1@cluster0.ruqmk8t.mongodb.net/ayusys?retryWrites=true&w=majority&appName=AyuSys')
   .then(() => console.log('Connected to MongoDB Atlas'))
   .catch((error: any) => console.error('MongoDB connection error:', error.message));
 

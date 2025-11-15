@@ -34,12 +34,23 @@ var __importStar = (this && this.__importStar) || (function () {
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
 const mongoose_1 = __importStar(require("mongoose"));
-const ProductSchema = new mongoose_1.Schema({
-    name: { type: String, required: true },
-    productId: { type: String, required: true, unique: true }, // Add: Matches frontend
-    unitPrice: { type: Number, required: true }, // Renamed from 'price'
-    barcode: { type: String, required: true, unique: true }, // Add: For scanning
-    quantity: { type: Number, default: 0 }, // Optional: For stock tracking later
-    rawMaterials: [{ materialId: { type: mongoose_1.Schema.Types.ObjectId, ref: 'RawMaterial' }, quantityUsed: Number }], // Keep for future
+const ProductVariantSchema = new mongoose_1.Schema({
+    size: { type: String, required: true },
+    price: { type: Number, required: true },
+    stock: { type: Number, default: 0 },
+    barcode: { type: String }
 });
+const ProductSchema = new mongoose_1.Schema({
+    productId: { type: String, unique: true, sparse: true, default: () => (Date.now().toString(36) + Math.random().toString(36).slice(2, 8)) },
+    // Top-level barcode to avoid collisions with legacy DB unique index on 'barcode'
+    barcode: { type: String, unique: true, sparse: true, default: () => ("auto-" + Date.now().toString(36) + Math.random().toString(36).slice(2, 8)) },
+    category: { type: String, required: true },
+    productType: { type: String, required: true },
+    variants: [ProductVariantSchema],
+    description: { type: String },
+    lowStockThreshold: { type: Number, default: 10 }
+}, {
+    timestamps: true
+});
+ProductSchema.index({ category: 1, productType: 1 });
 exports.default = mongoose_1.default.model('Product', ProductSchema);

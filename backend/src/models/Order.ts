@@ -1,3 +1,4 @@
+// models/Order.ts
 import mongoose from 'mongoose';
 
 const orderSchema = new mongoose.Schema({
@@ -19,7 +20,16 @@ const orderSchema = new mongoose.Schema({
   barcode: { type: String, required: true },
   personalized: { type: Boolean, default: false },
   paymentMethod: { type: String, enum: ['Debit Card', 'Credit Card', 'Cash', 'Other'], required: true },
-  packer: { type: String }
+  packer: { type: String },
+  // ADD THESE MISSING FIELDS:
+  createdAt: { type: Date, default: Date.now },
+  shippingAddress: {
+    street: String,
+    city: String,
+    state: String,
+    country: String,
+    zipCode: String
+  }
 });
 
 export default mongoose.model('Order', orderSchema);

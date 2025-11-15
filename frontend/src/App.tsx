@@ -50,7 +50,7 @@ function AppRoutes() {
             <Route path="/login" element={<Login />} />
             <Route path="/inventory" element={<Inventory />} />
             <Route path="/orders" element={<Orders socket={socket} />} />
-            <Route path="/products" element={<Products />} />
+            <Route path="/products" element={<Products socket={socket} />} />
             
             {/* ADMIN PACKING MANAGEMENT */}
             <Route path="/packing-admin" element={<PackingAdmin socket={socket} />} />
