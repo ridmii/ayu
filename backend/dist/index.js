@@ -17,7 +17,8 @@ const products_1 = __importDefault(require("./routes/products"));
 const packers_1 = __importDefault(require("./routes/packers")); // New
 const packing_1 = __importDefault(require("./routes/packing")); // Updated
 const dotenv_1 = __importDefault(require("dotenv"));
-dotenv_1.default.config({ path: '../.env' });
+const path_1 = __importDefault(require("path"));
+dotenv_1.default.config({ path: path_1.default.resolve(__dirname, '../.env') });
 const app = (0, express_1.default)();
 const server = http_1.default.createServer(app);
 exports.io = new socket_io_1.Server(server, {
@@ -47,6 +48,17 @@ mongoose_1.default
     .catch((error) => console.error('MongoDB connection error:', error.message));
 server.listen(5000, () => {
     console.log('Server running on port 5000');
+    console.log('Process PID:', process.pid, 'Startup time:', new Date().toISOString());
+});
+// Lightweight health endpoint to verify the server is up and reachable
+app.get('/health', (req, res) => {
+    res.json({ status: 'ok', pid: process.pid, time: new Date().toISOString() });
+});
+process.on('uncaughtException', (err) => {
+    console.error('UNCAUGHT EXCEPTION:', err && err.message);
+});
+process.on('unhandledRejection', (reason) => {
+    console.error('UNHANDLED REJECTION:', reason);
 });
 try {
     const packersRoutes = require('./routes/packers').default; // Fallback to CommonJS if ESM issues

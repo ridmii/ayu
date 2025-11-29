@@ -11,7 +11,8 @@ import productsRouter from './routes/products';
 import packersRoutes from './routes/packers'; // New
 import packingRoutes from './routes/packing'; // Updated
 import dotenv from 'dotenv';
-dotenv.config({ path: '../.env' });
+import path from 'path';
+dotenv.config({ path: path.resolve(__dirname, '../.env') });
 
 const app = express();
 const server = http.createServer(app);
@@ -49,6 +50,19 @@ mongoose
 
 server.listen(5000, () => {
   console.log('Server running on port 5000');
+  console.log('Process PID:', process.pid, 'Startup time:', new Date().toISOString());
+});
+
+// Lightweight health endpoint to verify the server is up and reachable
+app.get('/health', (req, res) => {
+  res.json({ status: 'ok', pid: process.pid, time: new Date().toISOString() });
+});
+
+process.on('uncaughtException', (err) => {
+  console.error('UNCAUGHT EXCEPTION:', err && (err as Error).message);
+});
+process.on('unhandledRejection', (reason) => {
+  console.error('UNHANDLED REJECTION:', reason);
 });
 
 try {

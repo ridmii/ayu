@@ -15,7 +15,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 const express_1 = require("express");
 const Order_1 = __importDefault(require("../models/Order"));
 const Customer_1 = __importDefault(require("../models/Customer"));
-const Product_1 = __importDefault(require("../models/Product")); // Import Product model
+const Product_1 = __importDefault(require("../models/Product"));
 const auth_1 = require("../middleware/auth");
 const uuid_1 = require("uuid");
 const jsonwebtoken_1 = __importDefault(require("jsonwebtoken"));
@@ -23,119 +23,169 @@ const index_1 = require("../index");
 const email_1 = require("../utils/email");
 const router = (0, express_1.Router)();
 const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key';
+// GET /api/orders - Fixed to include pendingPaid
 router.get('/', (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     try {
-        const orders = yield Order_1.default.find().populate('customer');
-        res.json(orders);
+        const orders = yield Order_1.default.find().populate('customer').lean();
+        // Ensure pendingPaid field is always present
+        const ordersWithPendingPaid = orders.map(order => (Object.assign(Object.assign({}, order), { pendingPaid: order.pendingPaid || false })));
+        res.json(ordersWithPendingPaid);
     }
     catch (error) {
         console.error('Failed to fetch orders:', error.message);
         res.status(500).json({ error: 'Failed to fetch orders' });
     }
 }));
+// POST /api/orders - Fixed to properly handle pendingPaid
 router.post('/', auth_1.requireAdmin, (req, res) => __awaiter(void 0, void 0, void 0, function* () {
-    var _a, _b, _c, _d;
-    const { customerId, items, personalized, paymentMethod } = req.body;
-    console.log('POST /api/orders body:', JSON.stringify({ customerId, items, personalized, paymentMethod }));
+    const { customerId, items, personalized, paymentMethod, pendingPaid } = req.body;
+    console.log('🔍 BACKEND ORDER CREATION - Received:', {
+        customerId,
+        itemsCount: items === null || items === void 0 ? void 0 : items.length,
+        personalized,
+        paymentMethod,
+        pendingPaid,
+        pendingPaidType: typeof pendingPaid
+    });
     try {
         const customer = yield Customer_1.default.findById(customerId);
         if (!customer) {
             console.error('Customer not found:', customerId);
             return res.status(404).json({ error: 'Customer not found' });
         }
-        let totalAmount = 0;
+        let itemsTotal = 0;
         // Validate items and check stock availability
         for (const item of items) {
-            console.log(`Validating item:`, JSON.stringify(item));
             if (!item.productId || !item.quantity || !item.unitPrice) {
-                console.error('Item validation failed:', item);
                 return res.status(400).json({ error: 'All item fields are required' });
             }
-            // Check if product exists and has sufficient stock (in variants)
             const product = yield Product_1.default.findById(item.productId);
             if (!product) {
-                console.error('Product not found:', item.productId);
                 return res.status(404).json({ error: `Product not found: ${item.productName || item.productId}` });
             }
-            // Find the matching variant by size/unit and check its stock
             const variantSize = item.unit || '';
-            console.log(`Looking for variant with size: "${variantSize}" in product ${item.productId}`);
-            console.log(`Product has ${((_a = product.variants) === null || _a === void 0 ? void 0 : _a.length) || 0} variants:`, (_b = product.variants) === null || _b === void 0 ? void 0 : _b.map((v) => ({ size: v.size, stock: v.stock })));
-            // Try to find variant by size, but if size is empty or not found, use first variant
             let variant = null;
             if (variantSize && product.variants) {
                 variant = product.variants.find((v) => v.size === variantSize);
             }
             if (!variant && product.variants && product.variants.length > 0) {
-                console.log(`Variant "${variantSize}" not found, using first variant`);
                 variant = product.variants[0];
             }
             if (!variant) {
-                console.error(`No variants available for product ${item.productId}`);
                 return res.status(400).json({
                     error: `No variants available for ${item.productName}`
                 });
             }
             const currentStock = variant.stock || 0;
-            console.log(`Variant stock: ${currentStock}, requested: ${item.quantity}`);
             if (currentStock < item.quantity) {
-                console.error(`Insufficient stock for ${item.productName}: available ${currentStock}, requested ${item.quantity}`);
-                return res.status(400).json({
-                    error: `Insufficient stock for ${item.productName}${variantSize ? ` (${variantSize})` : ''}. Available: ${currentStock}, Requested: ${item.quantity}`
-                });
+                const allowZeroStock = process.env.ALLOW_ZERO_STOCK === 'true';
+                if (!allowZeroStock) {
+                    return res.status(400).json({
+                        error: `Insufficient stock for ${item.productName}. Available: ${currentStock}, Requested: ${item.quantity}`
+                    });
+                }
             }
-            totalAmount += item.quantity * item.unitPrice;
+            itemsTotal += item.quantity * item.unitPrice;
         }
-        // Reduce product quantities from the correct variants
+        // FIXED: Proper pending payment calculation
+        const customerPendingAmount = customer.pendingPayments || 0;
+        const orderTotalAmount = pendingPaid ? itemsTotal + customerPendingAmount : itemsTotal;
+        console.log('💰 BACKEND ORDER CALCULATION:', {
+            itemsTotal,
+            customerPendingAmount,
+            pendingPaid,
+            orderTotalAmount
+        });
+        // Reduce product quantities
         for (const item of items) {
-            const pid = item.productId || ((_c = item.product) === null || _c === void 0 ? void 0 : _c._id);
-            if (pid) {
+            const product = yield Product_1.default.findById(item.productId);
+            if (product && product.variants) {
                 const variantSize = item.unit || '';
-                const product = yield Product_1.default.findById(pid);
-                if (product && product.variants) {
-                    // Find and update the matching variant
-                    const variantIndex = variantSize
-                        ? product.variants.findIndex((v) => v.size === variantSize)
-                        : 0;
-                    if (variantIndex >= 0) {
-                        product.variants[variantIndex].stock = Math.max(0, (product.variants[variantIndex].stock || 0) - (item.quantity || 0));
-                        yield product.save();
-                    }
+                const variantIndex = variantSize
+                    ? product.variants.findIndex((v) => v.size === variantSize)
+                    : 0;
+                if (variantIndex >= 0) {
+                    product.variants[variantIndex].stock = Math.max(0, (product.variants[variantIndex].stock || 0) - item.quantity);
+                    yield product.save();
                 }
             }
         }
         const order = new Order_1.default({
             customer: customerId,
             items,
-            totalAmount,
-            pendingPayments: customer.pendingPayments,
+            totalAmount: orderTotalAmount,
+            pendingPayments: customerPendingAmount,
+            pendingPaid: Boolean(pendingPaid),
             barcode: (0, uuid_1.v4)(),
             status: 'Pending',
             personalized,
             paymentMethod,
         });
         yield order.save();
-        const populatedOrder = yield Order_1.default.findById(order._id).populate('customer');
-        index_1.io.emit('orderCreated', populatedOrder);
-        // Emit product update for real-time stock changes
-        for (const item of items) {
-            const pid = item.productId || ((_d = item.product) === null || _d === void 0 ? void 0 : _d._id);
-            if (pid) {
-                const updatedProduct = yield Product_1.default.findById(pid);
-                if (updatedProduct) {
-                    index_1.io.emit('productUpdated', updatedProduct);
-                }
+        console.log('💾 BACKEND ORDER SAVED:', {
+            orderId: order._id,
+            pendingPaid: order.pendingPaid,
+            totalAmount: order.totalAmount,
+            pendingPayments: order.pendingPayments
+        });
+        // Clear customer pending payments if collected
+        if (pendingPaid && customerPendingAmount > 0) {
+            try {
+                customer.pendingPayments = 0;
+                yield customer.save();
+                console.log(`✅ Cleared customer pending payments: ${customer.name}`);
+            }
+            catch (e) {
+                console.warn('Failed to clear customer pendingPayments:', e && e.message);
             }
         }
-        // Send initial email (make extra data optional)
+        // FIXED: Use .lean() and manually include pendingPaid in the populated response
+        const populatedOrder = yield Order_1.default.findById(order._id)
+            .populate('customer')
+            .lean();
+        // Ensure pendingPaid is included in the response
+        const responseOrder = Object.assign(Object.assign({}, populatedOrder), { pendingPaid: order.pendingPaid // Explicitly include this field
+         });
+        console.log('📤 BACKEND RESPONSE ORDER:', {
+            orderId: responseOrder._id,
+            pendingPaid: responseOrder.pendingPaid,
+            totalAmount: responseOrder.totalAmount
+        });
+        index_1.io.emit('orderCreated', responseOrder);
+        // Emit product and customer updates
+        for (const item of items) {
+            const updatedProduct = yield Product_1.default.findById(item.productId);
+            if (updatedProduct) {
+                index_1.io.emit('productUpdated', updatedProduct);
+            }
+        }
+        if (pendingPaid && customerPendingAmount > 0) {
+            index_1.io.emit('customerUpdated', customer);
+        }
         if (customer.email) {
             yield (0, email_1.sendInvoiceEmail)(customer.email, 'New Order Confirmation', '<p>Your order is ready for packing.</p>');
         }
-        res.status(201).json(populatedOrder);
+        res.status(201).json(responseOrder);
     }
     catch (error) {
-        console.error('Failed to create order:', error.message);
+        console.error('❌ Failed to create order:', error.message);
         res.status(500).json({ error: 'Failed to create order' });
+    }
+}));
+// GET /api/orders/:id - Fixed to include pendingPaid
+router.get('/:id', (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    try {
+        const order = yield Order_1.default.findById(req.params.id).populate('customer').lean();
+        if (!order) {
+            return res.status(404).json({ error: 'Order not found' });
+        }
+        // Ensure pendingPaid field is present
+        const orderWithPendingPaid = Object.assign(Object.assign({}, order), { pendingPaid: order.pendingPaid || false });
+        res.json(orderWithPendingPaid);
+    }
+    catch (error) {
+        console.error('Failed to fetch order:', error.message);
+        res.status(500).json({ error: 'Failed to fetch order' });
     }
 }));
 router.put('/:id/status', (req, res) => __awaiter(void 0, void 0, void 0, function* () {
@@ -149,28 +199,27 @@ router.put('/:id/status', (req, res) => __awaiter(void 0, void 0, void 0, functi
         if (packer)
             order.packer = packer;
         yield order.save();
-        const populatedOrder = yield Order_1.default.findById(order._id).populate('customer');
-        index_1.io.emit('orderUpdated', populatedOrder);
-        res.json(populatedOrder);
+        // FIXED: Include pendingPaid in the response
+        const populatedOrder = yield Order_1.default.findById(order._id).populate('customer').lean();
+        const responseOrder = Object.assign(Object.assign({}, populatedOrder), { pendingPaid: order.pendingPaid });
+        index_1.io.emit('orderUpdated', responseOrder);
+        res.json(responseOrder);
     }
     catch (error) {
         console.error('Failed to update order:', error.message);
         res.status(500).json({ error: 'Failed to update order' });
     }
 }));
-// routes/orders.ts - Fix the update endpoint
 router.put('/:id', auth_1.requireAdmin, (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     try {
         const order = yield Order_1.default.findById(req.params.id);
         if (!order)
             return res.status(404).json({ error: 'Order not found' });
-        // Allow updating createdAt and shippingAddress and other mutable fields
         const { createdAt, shippingAddress, status, packerId } = req.body;
         if (createdAt) {
             order.createdAt = new Date(createdAt);
         }
         if (shippingAddress) {
-            // Ensure shippingAddress exists on order object
             if (!order.shippingAddress) {
                 order.shippingAddress = {};
             }
@@ -183,13 +232,14 @@ router.put('/:id', auth_1.requireAdmin, (req, res) => __awaiter(void 0, void 0, 
             order.packerId = packerId;
         }
         yield order.save();
-        const populatedOrder = yield Order_1.default.findById(order._id).populate('customer');
-        // Emit socket event
+        // FIXED: Include pendingPaid in the response
+        const populatedOrder = yield Order_1.default.findById(order._id).populate('customer').lean();
+        const responseOrder = Object.assign(Object.assign({}, populatedOrder), { pendingPaid: order.pendingPaid });
         const io = req.app.get('io');
         if (io) {
-            io.emit('orderUpdated', populatedOrder);
+            io.emit('orderUpdated', responseOrder);
         }
-        res.json(populatedOrder);
+        res.json(responseOrder);
     }
     catch (error) {
         console.error('Failed to update order:', error.message);
@@ -202,9 +252,7 @@ router.put('/:id/assign-packer', auth_1.requireAdmin, (req, res) => __awaiter(vo
         const order = yield Order_1.default.findById(req.params.id);
         if (!order)
             return res.status(404).json({ error: 'Order not found' });
-        // store packerId or name depending on your model; keep string for compatibility
         order.packer = packerId || '';
-        // also set packerId field
         order.packerId = packerId || undefined;
         yield order.save();
         // Update packer status
@@ -215,7 +263,6 @@ router.put('/:id/assign-packer', auth_1.requireAdmin, (req, res) => __awaiter(vo
                 p.isActive = true;
                 p.lastActive = new Date();
                 yield p.save();
-                // emit packer update
                 try {
                     const ioRef = req.app.get('io');
                     (ioRef === null || ioRef === void 0 ? void 0 : ioRef.emit) && ioRef.emit('packers:updated', p);
@@ -230,8 +277,10 @@ router.put('/:id/assign-packer', auth_1.requireAdmin, (req, res) => __awaiter(vo
         }
         const token = jsonwebtoken_1.default.sign({ packerId: packerId || '', orderId: order._id }, JWT_SECRET, { expiresIn: '24h' });
         const packingUrl = `${req.get('origin')}/packing?token=${token}`;
-        index_1.io.emit('orderUpdated', order);
-        // Return the fields the frontend expects
+        // FIXED: Include pendingPaid in the emitted order
+        const populatedOrder = yield Order_1.default.findById(order._id).populate('customer').lean();
+        const responseOrder = Object.assign(Object.assign({}, populatedOrder), { pendingPaid: order.pendingPaid });
+        index_1.io.emit('orderUpdated', responseOrder);
         res.json({ success: true, message: 'Packer assigned', packingToken: token, qrBase64: null, url: packingUrl });
     }
     catch (error) {
@@ -245,8 +294,10 @@ router.get('/packing/:token', (req, res) => __awaiter(void 0, void 0, void 0, fu
         let query = { packer: packerId, status: 'Pending' };
         if (orderId)
             query = { _id: orderId, packer: packerId };
-        const orders = yield Order_1.default.find(query).populate('customer');
-        res.json({ orders, packerId });
+        const orders = yield Order_1.default.find(query).populate('customer').lean();
+        // FIXED: Include pendingPaid in packing orders
+        const ordersWithPendingPaid = orders.map(order => (Object.assign(Object.assign({}, order), { pendingPaid: order.pendingPaid || false })));
+        res.json({ orders: ordersWithPendingPaid, packerId });
     }
     catch (error) {
         res.status(401).json({ error: 'Invalid or expired token' });
@@ -260,18 +311,19 @@ router.put('/packing/:token/:orderId/packed', (req, res) => __awaiter(void 0, vo
             return res.status(404).json({ error: 'Order not found or unauthorized' });
         order.status = 'Packed';
         yield order.save();
-        const populatedOrder = yield Order_1.default.findById(order._id).populate('customer');
+        // FIXED: Include pendingPaid in the response
+        const populatedOrder = yield Order_1.default.findById(order._id).populate('customer').lean();
+        const responseOrder = Object.assign(Object.assign({}, populatedOrder), { pendingPaid: order.pendingPaid });
         if (populatedOrder && populatedOrder.customer && populatedOrder.customer.email) {
             yield (0, email_1.sendInvoiceEmail)(populatedOrder.customer.email, `Packed Order Invoice #${order._id}`, '<p>Your order has been packed.</p>');
         }
-        index_1.io.emit('orderUpdated', populatedOrder);
+        index_1.io.emit('orderUpdated', responseOrder);
         res.json({ message: 'Order marked as packed' });
     }
     catch (error) {
         res.status(401).json({ error: 'Invalid token' });
     }
 }));
-// Delete an order by id (admin) - with stock restoration
 router.delete('/:id', auth_1.requireAdmin, (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     try {
         const order = yield Order_1.default.findById(req.params.id);
@@ -281,20 +333,17 @@ router.delete('/:id', auth_1.requireAdmin, (req, res) => __awaiter(void 0, void 
         for (const item of order.items) {
             if (item.productId) {
                 yield Product_1.default.findByIdAndUpdate(item.productId, { $inc: { quantity: item.quantity } }, { new: true });
-                // Emit product update for real-time stock changes
                 const updatedProduct = yield Product_1.default.findById(item.productId);
                 if (updatedProduct) {
                     index_1.io.emit('productUpdated', updatedProduct);
                 }
             }
         }
-        // If there's a linked packing assignment, remove it
         try {
             const PackingAssignment = require('../models/PackingAssignment').default;
             yield PackingAssignment.deleteMany({ orderId: order._id });
         }
         catch (e) {
-            // ignore if model not available
             console.warn('PackingAssignment model not available when deleting order:', (e === null || e === void 0 ? void 0 : e.message) || e);
         }
         yield order.deleteOne();
@@ -306,7 +355,6 @@ router.delete('/:id', auth_1.requireAdmin, (req, res) => __awaiter(void 0, void 
         res.status(500).json({ error: 'Failed to delete order' });
     }
 }));
-// New endpoint to update order items and adjust stock
 router.put('/:id/items', auth_1.requireAdmin, (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     try {
         const { items } = req.body;
@@ -343,16 +391,17 @@ router.put('/:id/items', auth_1.requireAdmin, (req, res) => __awaiter(void 0, vo
         order.items = items;
         order.totalAmount = items.reduce((total, item) => total + (item.quantity * item.unitPrice), 0);
         yield order.save();
-        const populatedOrder = yield Order_1.default.findById(order._id).populate('customer');
-        // Emit updates
-        index_1.io.emit('orderUpdated', populatedOrder);
+        // FIXED: Include pendingPaid in the response
+        const populatedOrder = yield Order_1.default.findById(order._id).populate('customer').lean();
+        const responseOrder = Object.assign(Object.assign({}, populatedOrder), { pendingPaid: order.pendingPaid });
+        index_1.io.emit('orderUpdated', responseOrder);
         for (const item of items) {
             const updatedProduct = yield Product_1.default.findById(item.productId);
             if (updatedProduct) {
                 index_1.io.emit('productUpdated', updatedProduct);
             }
         }
-        res.json(populatedOrder);
+        res.json(responseOrder);
     }
     catch (error) {
         console.error('Failed to update order items:', error.message);

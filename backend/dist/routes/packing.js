@@ -40,6 +40,151 @@ router.get('/:token', (req, res) => __awaiter(void 0, void 0, void 0, function* 
         res.status(500).json({ error: 'Failed to fetch packing assignments' });
     }
 }));
+// Public packer-only view (no prices, no order date) for PC-based packer system
+router.get('/for-packer/:token', (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    try {
+        const assignments = yield PackingAssignment_1.default.find({
+            token: req.params.token,
+            status: 'assigned',
+            expiry: { $gt: new Date() }
+        })
+            .populate('orderId')
+            .populate('packerId');
+        if (!assignments.length) {
+            return res.status(404).json({ error: 'Invalid or expired token' });
+        }
+        // Sanitize orders for packer view: remove prices and order date
+        const sanitized = assignments.map(a => {
+            // a.orderId / a.packerId can be either ObjectId or populated documents.
+            // Safely handle both cases without calling toObject on ObjectId.
+            let order = null;
+            if (a.orderId) {
+                if (typeof a.orderId === 'object' && a.orderId.toObject) {
+                    order = a.orderId.toObject();
+                }
+                else if (typeof a.orderId === 'object') {
+                    order = a.orderId;
+                }
+            }
+            if (order) {
+                // keep only required fields for packing
+                order.items = order.items.map((it) => ({
+                    productName: it.productName,
+                    quantity: it.quantity,
+                    unit: it.unit || null,
+                    productId: it.productId
+                }));
+                // remove fields packers shouldn't see
+                delete order.totalPrice;
+                delete order.orderDate;
+                order.customer = order.customer ? {
+                    name: order.customer.name || '',
+                    address: order.customer.address || '',
+                    phone: order.customer.phone || ''
+                } : null;
+            }
+            let packer = null;
+            if (a.packerId) {
+                if (typeof a.packerId === 'object' && a.packerId.toObject) {
+                    packer = a.packerId.toObject();
+                }
+                else if (typeof a.packerId === 'object') {
+                    packer = a.packerId;
+                }
+            }
+            if (packer) {
+                // only expose packer display fields
+                packer.name = packer.name || packer.fullName || '';
+                delete packer.email;
+                delete packer.phone;
+            }
+            return {
+                _id: a._id,
+                token: a.token,
+                expiry: a.expiry,
+                status: a.status,
+                order,
+                packer
+            };
+        });
+        res.json({ assignments: sanitized });
+    }
+    catch (error) {
+        console.error('Error fetching packer-only assignments:', error);
+        res.status(500).json({ error: 'Failed to fetch packer assignments' });
+    }
+}));
+// Support query token: /for-packer?token=...
+router.get('/for-packer', (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    const token = String(req.query.token || '');
+    if (!token)
+        return res.status(400).json({ error: 'Token is required' });
+    try {
+        const assignments = yield PackingAssignment_1.default.find({
+            token,
+            status: 'assigned',
+            expiry: { $gt: new Date() }
+        })
+            .populate('orderId')
+            .populate('packerId');
+        if (!assignments.length) {
+            return res.status(404).json({ error: 'Invalid or expired token' });
+        }
+        const sanitized = assignments.map(a => {
+            let order = null;
+            if (a.orderId) {
+                if (typeof a.orderId === 'object' && a.orderId.toObject) {
+                    order = a.orderId.toObject();
+                }
+                else if (typeof a.orderId === 'object') {
+                    order = a.orderId;
+                }
+            }
+            if (order) {
+                order.items = order.items.map((it) => ({
+                    productName: it.productName,
+                    quantity: it.quantity,
+                    unit: it.unit || null,
+                    productId: it.productId
+                }));
+                delete order.totalPrice;
+                delete order.orderDate;
+                order.customer = order.customer ? {
+                    name: order.customer.name || '',
+                    address: order.customer.address || '',
+                    phone: order.customer.phone || ''
+                } : null;
+            }
+            let packer = null;
+            if (a.packerId) {
+                if (typeof a.packerId === 'object' && a.packerId.toObject) {
+                    packer = a.packerId.toObject();
+                }
+                else if (typeof a.packerId === 'object') {
+                    packer = a.packerId;
+                }
+            }
+            if (packer) {
+                packer.name = packer.name || packer.fullName || '';
+                delete packer.email;
+                delete packer.phone;
+            }
+            return {
+                _id: a._id,
+                token: a.token,
+                expiry: a.expiry,
+                status: a.status,
+                order,
+                packer
+            };
+        });
+        res.json({ assignments: sanitized });
+    }
+    catch (error) {
+        console.error('Error fetching packer-only assignments (query):', error);
+        res.status(500).json({ error: 'Failed to fetch packer assignments' });
+    }
+}));
 // Mark order as packed
 router.put('/:token/:orderId/packed', (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     try {
@@ -88,11 +233,21 @@ router.put('/:orderId/assign', (req, res) => __awaiter(void 0, void 0, void 0, f
         if (!packer) {
             return res.status(404).json({ error: 'Packer not found' });
         }
-        // Generate unique token and QR code
+        // Generate unique token
         const token = (0, uuid_1.v4)();
         const expiry = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
+        // Existing frontend packing link (used by mobile QR flows)
         const link = `${process.env.FRONTEND_URL || 'http://localhost:5173'}/packing?token=${token}`;
-        const qrBase64 = yield qrcode_1.default.toDataURL(link);
+        let qrBase64 = null;
+        try {
+            qrBase64 = yield qrcode_1.default.toDataURL(link);
+        }
+        catch (err) {
+            console.warn('Failed to generate QR code:', err);
+            qrBase64 = null;
+        }
+        // New packer system link (PC-based interface) - configure via PACKER_SYSTEM_URL
+        const packerLink = `${process.env.PACKER_SYSTEM_URL || process.env.FRONTEND_URL || 'http://localhost:5173'}/for-packer?token=${token}`;
         // Create packing assignment
         const assignment = new PackingAssignment_1.default({
             orderId: order._id,
@@ -115,6 +270,7 @@ router.put('/:orderId/assign', (req, res) => __awaiter(void 0, void 0, void 0, f
             success: true,
             packingToken: token,
             qrBase64,
+            packerLink,
             assignmentId: assignment._id,
             message: 'Packer assigned successfully'
         });

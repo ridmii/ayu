@@ -14,14 +14,16 @@ const orderSchema = new mongoose.Schema({
     productName: { type: String, required: true },
     quantity: { type: Number, required: true },
     unitPrice: { type: Number, required: true },
+    productId: { type: mongoose.Schema.Types.ObjectId, ref: 'Product', required: true },
+    unit: { type: String }
   }],
   totalAmount: { type: Number, required: true },
   pendingPayments: { type: Number, default: 0 },
+  pendingPaid: { type: Boolean, default: false },
   barcode: { type: String, required: true },
   personalized: { type: Boolean, default: false },
   paymentMethod: { type: String, enum: ['Debit Card', 'Credit Card', 'Cash', 'Other'], required: true },
   packer: { type: String },
-  // ADD THESE MISSING FIELDS:
   createdAt: { type: Date, default: Date.now },
   shippingAddress: {
     street: String,

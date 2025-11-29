@@ -17,6 +17,7 @@ import {
   Menu,
 } from "lucide-react";
 
+
 const notificationAPI = {
   getLowInventory: async () => {
     const response = await fetch("/api/inventory/low-stock");
@@ -281,6 +282,7 @@ const Navbar = () => {
                 <button className="px-3 py-2 rounded-xl bg-white/10 hover:bg-white/20 transition">
                   <User className="h-4 w-4 inline-block mr-1" /> Profile
                 </button>
+                <ThemeToggle />
                 <button
                   onClick={handleLogout}
                   className="px-3 py-2 rounded-xl bg-red-500/20 hover:bg-red-500/30 text-white transition"
@@ -340,6 +342,9 @@ const Navbar = () => {
                     <LogOut className="h-4 w-4" />
                     <span>Logout</span>
                   </button>
+                  <div className="mt-2">
+                    <ThemeToggle compact />
+                  </div>
                 </>
               ) : (
                 <NavLink

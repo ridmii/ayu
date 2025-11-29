@@ -19,9 +19,11 @@
     "cors": "^2.8.5",
     "date-fns": "^4.1.0",
     "framer-motion": "^12.23.22",
+    "html2canvas": "^1.4.1",
     "jsbarcode": "^3.12.1",
     "jspdf": "^3.0.2",
     "lucide-react": "^0.544.0",
+    "pdfmake": "^0.2.20",
     "qrcode.react": "^4.2.0",
     "react": "^19.0.0-rc-69d4b800-20241021",
     "react-dom": "^19.0.0-rc-69d4b800-20241021",
@@ -31,6 +33,7 @@
     "xlsx": "^0.18.5"
   },
   "devDependencies": {
+    "@types/pdfmake": "^0.2.12",
     "@types/react": "^19.1.15",
     "@types/react-dom": "^19.1.9",
     "@vitejs/plugin-react": "^4.3.3",

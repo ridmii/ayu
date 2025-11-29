@@ -6,3 +6,13 @@
 .text-green-700 { color: #047857; }
 .bg-green-500 { background-color: #10B981; }
 .hover\:bg-green-600:hover { background-color: #059669; }
+
+/* Basic dark-mode adjustments for non-tailwind inline styles */
+html.dark, html.dark body {
+	background-color: #0b1220;
+	color: #e6eef4;
+}
+
+/* Make default white surfaces a bit darker when in dark mode */
+html.dark .bg-white { background-color: #0f1724 !important; }
+html.dark .text-gray-600 { color: #cbd5e1 !important; }

@@ -10,6 +10,8 @@ import ErrorBoundary from './components/ErrorBoundary';
 import PackingAdmin from './pages/Packing';  // Admin interface
 import PackingSuccess from './components/PackingSuccess';
 import PackerSimple from './components/PackerSimple';  // Packer interface
+import PackerPC from './components/PackerPC';
+import Footer from './components/Footer';
 
 function AppRoutes() {
   const location = useLocation();
@@ -27,7 +29,24 @@ function AppRoutes() {
     io(import.meta.env.VITE_BACKEND_URL || 'http://localhost:5000')
   );
   // If a packer token is present in the URL, expose only the packer UI and nothing else
-    if (tokenPresent) {
+  if (tokenPresent) {
+    const pathname = window.location.pathname || '';
+    // If the URL uses the packer PC path, show PC interface; otherwise show simple mobile interface
+    if (pathname.startsWith('/for-packer')) {
+      return (
+        <div className="min-h-screen bg-gray-100 flex flex-col">
+          <ErrorBoundary>
+            <Routes>
+                <Route path="/for-packer" element={<PackerPC />} />
+                <Route path="/packing-success" element={<PackingSuccess />} />
+                <Route path="*" element={<PackerPC />} />
+            </Routes>
+          </ErrorBoundary>
+          <Footer />
+        </div>
+      );
+    }
+
     return (
       <div className="min-h-screen bg-gray-100">
         <ErrorBoundary>
@@ -43,7 +62,7 @@ function AppRoutes() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-100">
+    <div className="min-h-screen bg-gray-100 flex flex-col">
       {!hideNavbar && <Navbar />}
       <ErrorBoundary>
         <Routes>
@@ -62,6 +81,7 @@ function AppRoutes() {
             <Route path="/" element={<Inventory />} />
         </Routes>
       </ErrorBoundary>
+      <Footer />
     </div>
   );
 }

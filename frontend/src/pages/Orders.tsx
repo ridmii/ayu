@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { Socket } from 'socket.io-client';
 import api from '../api';
 import jsPDF from 'jspdf';
+import html2canvas from 'html2canvas';
 import { BrowserMultiFormatReader, DecodeHintType } from '@zxing/library';
 import axios, { type AxiosResponse } from 'axios';
 import {
@@ -41,7 +42,15 @@ import {
   Layers
 } from 'lucide-react';
 
-// Interfaces - UPDATED to include productId in OrderItem
+let sinhalaFontsReady = true;
+
+// Simple initialization for jsPDF (no font loading needed)
+const initializePDFMake = async () => {
+  console.log('✅ [PDF Init] Using jsPDF - Sinhala fonts supported natively');
+};
+
+    
+// Interfaces
 interface Customer {
   _id: string;
   name: string;
@@ -52,11 +61,11 @@ interface Customer {
 }
 
 interface OrderItem {
-  productId: string; // Required for stock reduction
+  productId: string;
   productName: string;
   quantity: number;
   unitPrice: number;
-  unit?: string; // Added for product unit/size
+  unit?: string;
 }
 
 interface Order {
@@ -70,6 +79,20 @@ interface Order {
   personalized: boolean;
   paymentMethod: string;
   createdAt: string;
+  pendingPaid: boolean;
+}
+
+interface OrderFormData {
+  customerId: string;
+  customerName: string;
+  customerEmail: string;
+  customerPhone: string;
+  customerAddress: string;
+  customerPendingPayments: number;
+  items: OrderFormItem[];
+  paymentMethod: string;
+  personalized: boolean;
+  pendingPaid: boolean;
 }
 
 interface Product {
@@ -80,11 +103,10 @@ interface Product {
   barcode: string;
   quantity?: number;
   lowStockThreshold?: number;
-  unit?: string; // Product size/unit (e.g., "50g", "250g", "1kg")
+  unit?: string;
   rawMaterials?: any[];  
 }
 
-// UPDATED: OrderFormItem now includes productId and unit
 interface OrderFormItem {
   productId: string;
   productName: string;
@@ -101,18 +123,6 @@ interface CustomerFormData {
   pendingPayments: number;
 }
 
-interface OrderFormData {
-  customerId: string;
-  customerName: string;
-  customerEmail: string;
-  customerPhone: string;
-  customerAddress: string;
-  customerPendingPayments: number;
-  items: OrderFormItem[];
-  paymentMethod: string;
-  personalized: boolean;
-}
-
 interface LoadingState {
   orders: boolean;
   customers: boolean;
@@ -127,20 +137,20 @@ interface ConfirmationConfig {
   onCancel?: () => void;
 }
 
-// Updated color palette with requested colors
+// Updated color palette
 const colors = {
-  primary: '#053B50',     // Order Creation - Deep Teal
-  secondary: '#176B87',   // Customers - Medium Teal
-  accent: '#64CCC5',      // Order History - Light Teal
-  success: '#10b981',     // Emerald
-  warning: '#f59e0b',     // Amber
-  error: '#ef4444',       // Red
-  background: '#f8fafc',  // Light gray
-  surface: '#ffffff',     // White
+  primary: '#053B50',
+  secondary: '#176B87',
+  accent: '#64CCC5',
+  success: '#10b981',
+  warning: '#f59e0b',
+  error: '#ef4444',
+  background: '#f8fafc',
+  surface: '#ffffff',
   text: {
-    primary: '#1f2937',   // Gray-800
-    secondary: '#6b7280', // Gray-500
-    light: '#9ca3af'      // Gray-400
+    primary: '#1f2937',
+    secondary: '#6b7280',
+    light: '#9ca3af'
   }
 };
 
@@ -162,7 +172,7 @@ const Orders = ({ socket }: { socket: Socket }) => {
   const [lastCreatedOrder, setLastCreatedOrder] = useState<Order | null>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const [products, setProducts] = useState<Product[]>([]);
-  const [productsFlat, setProductsFlat] = useState<any[]>([]); // flattened product+variant for search
+  const [productsFlat, setProductsFlat] = useState<any[]>([]);
   
   // Enhanced state management
   const [activeTab, setActiveTab] = useState<'create' | 'customers' | 'orders'>('create');
@@ -172,6 +182,9 @@ const Orders = ({ socket }: { socket: Socket }) => {
     customers: false,
     products: false
   });
+
+  // NEW STATE: Track pdfMake initialization
+  const [pdfMakeInitialized, setPdfMakeInitialized] = useState(false);
 
   // Mobile state
   const [isMobile, setIsMobile] = useState(false);
@@ -224,7 +237,6 @@ const Orders = ({ socket }: { socket: Socket }) => {
     pendingPayments: 0,
   });
 
-  // UPDATED: Order form data with proper productId
   const [orderFormData, setOrderFormData] = useState<OrderFormData>({
     customerId: '',
     customerName: '',
@@ -235,9 +247,20 @@ const Orders = ({ socket }: { socket: Socket }) => {
     items: [{ productId: '', productName: '', quantity: '', unitPrice: '', unit: '' }],
     paymentMethod: 'Cash',
     personalized: false,
+    pendingPaid: false,
   });
 
   const [showProductSuggestions, setShowProductSuggestions] = useState<boolean[]>([]);
+
+  // Initialize pdfMake with Sinhala fonts when component mounts - NEW CODE
+  useEffect(() => {
+    const initPDF = async () => {
+      await initializePDFMake();
+      setPdfMakeInitialized(true);
+    };
+    
+    initPDF();
+  }, []);
 
   // Check for mobile viewport
   useEffect(() => {
@@ -380,7 +403,6 @@ const Orders = ({ socket }: { socket: Socket }) => {
     setLoading(prev => ({ ...prev, products: true }));
     try {
       const response = await api.get('/api/products');
-      // Ensure we have an array of products with required fields
       const productsData = response.data.map((product: Product) => ({
         ...product,
         name: product.name || '',
@@ -391,7 +413,6 @@ const Orders = ({ socket }: { socket: Socket }) => {
         unit: product.unit || ''
       }));
       setProducts(productsData);
-      // Build flattened variant list for better search (e.g., "Samahan 50g")
       const flat: any[] = [];
       response.data.forEach((product: any) => {
         const pt = product.productType || '';
@@ -434,7 +455,6 @@ const Orders = ({ socket }: { socket: Socket }) => {
         setOrders((prev) => prev.map((order) => (order._id === updatedOrder._id ? updatedOrder : order)));
       });
       
-      // NEW: Listen for product updates when stock changes
       socket.on('productUpdated', (updatedProduct: Product) => {
         setProducts((prev) => prev.map((product) => 
           product._id === updatedProduct._id ? updatedProduct : product
@@ -456,7 +476,7 @@ const Orders = ({ socket }: { socket: Socket }) => {
     setShowProductSuggestions(Array(orderFormData.items.length).fill(false));
   }, [orderFormData.items.length]);
 
-  // Enhanced barcode scanning - UPDATED to include productId
+  // Enhanced barcode scanning
   useEffect(() => {
     if (showScanner && videoRef.current) {
       codeReader.current.decodeFromVideoDevice(
@@ -472,7 +492,7 @@ const Orders = ({ socket }: { socket: Socket }) => {
                 setOrderFormData((prev) => ({
                   ...prev,
                   items: [...prev.items, { 
-                    productId: product._id, // Include productId
+                    productId: product._id,
                     productName: product.name, 
                     quantity: '1', 
                     unitPrice: product.unitPrice.toString(),
@@ -547,10 +567,8 @@ const Orders = ({ socket }: { socket: Socket }) => {
     
     const lowerQuery = query.toLowerCase();
     return orders.filter(order => {
-      // Search by order ID
       if (order._id.toLowerCase().includes(lowerQuery)) return true;
       
-      // Search by customer information
       if (order.customer) {
         if (
           order.customer.name.toLowerCase().includes(lowerQuery) ||
@@ -559,18 +577,14 @@ const Orders = ({ socket }: { socket: Socket }) => {
         ) return true;
       }
       
-      // Search by product names in items
       if (order.items.some(item => 
         item.productName.toLowerCase().includes(lowerQuery)
       )) return true;
       
-      // Search by status
       if (order.status.toLowerCase().includes(lowerQuery)) return true;
       
-      // Search by payment method
       if (order.paymentMethod.toLowerCase().includes(lowerQuery)) return true;
       
-      // Search by date
       const orderDate = new Date(order.createdAt).toLocaleDateString();
       if (orderDate.includes(query)) return true;
       
@@ -587,6 +601,7 @@ const Orders = ({ socket }: { socket: Socket }) => {
       customerPhone: customer.phone,
       customerAddress: customer.address,
       customerPendingPayments: customer.pendingPayments,
+      pendingPaid: false,
     });
     setSearchQuery('');
     setFilteredCustomers([]);
@@ -600,12 +615,10 @@ const Orders = ({ socket }: { socket: Socket }) => {
 
     const newItems = [...orderFormData.items];
     newItems[index].productName = query;
-    // Clear productId when user types manually
     newItems[index].productId = '';
     newItems[index].unit = '';
     setOrderFormData({ ...orderFormData, items: newItems });
 
-    // Filter flattened variants based on search query (matches productType, size, category, barcode)
     const normalize = (s: string) => s ? s.toString().toLowerCase().replace(/\s+/g, ' ').trim() : '';
     if (query.length > 0) {
       const q = normalize(query);
@@ -636,7 +649,6 @@ const Orders = ({ socket }: { socket: Socket }) => {
     };
     setOrderFormData({ ...orderFormData, items: newItems });
 
-    // clear suggestions
     const newSuggestions = [...productSuggestions];
     newSuggestions[index] = [];
     setProductSuggestions(newSuggestions);
@@ -645,20 +657,19 @@ const Orders = ({ socket }: { socket: Socket }) => {
     setShowProductSuggestions(newShow);
   };
 
-  // Enhanced product selection - UPDATED to include all product data
+  // Enhanced product selection
   const handleProductSelect = (index: number, product: Product) => {
     const newItems = [...orderFormData.items];
     newItems[index] = {
-      productId: product._id, // Set the productId
+      productId: product._id,
       productName: product.name,
       quantity: newItems[index].quantity || '1',
       unitPrice: product.unitPrice.toString(),
-      unit: product.unit || '' // Set the unit
+      unit: product.unit || ''
     };
     
     setOrderFormData({ ...orderFormData, items: newItems });
     
-    // Clear suggestions for this index
     const newSearchQueries = [...productSearchQuery];
     newSearchQueries[index] = product.name;
     setProductSearchQuery(newSearchQueries);
@@ -707,6 +718,7 @@ const Orders = ({ socket }: { socket: Socket }) => {
           customerPhone: response.data.phone,
           customerAddress: response.data.address,
           customerPendingPayments: response.data.pendingPayments,
+          pendingPaid: false,
         });
         showSuccessMessage('Customer Created', `${customerFormData.name} has been created successfully!`);
       }
@@ -754,81 +766,166 @@ const Orders = ({ socket }: { socket: Socket }) => {
       }
     );
   };
-
-  // Enhanced invoice generation
-  const generateInvoicePDF = (order: Order) => {
+const generateInvoiceWithPDFMake = async (order: Order) => {
+  try {
     if (!order.customer) {
       setError(`Cannot generate invoice for order ${order._id}: No customer data`);
       return null;
     }
-    
-    const doc = new jsPDF();
-    
-    // Header with new color
-    doc.setFillColor(5, 59, 80); // #053B50
-    doc.rect(0, 0, 210, 40, 'F');
-    doc.setTextColor(255, 255, 255);
-    doc.setFontSize(20);
-    doc.text('INVOICE', 105, 20, { align: 'center' });
-    doc.setFontSize(10);
-    doc.text(`Order ID: ${order._id}`, 105, 30, { align: 'center' });
-    
-    // Customer Details
-    doc.setTextColor(0, 0, 0);
-    doc.setFontSize(12);
-    doc.text('Bill To:', 20, 60);
-    doc.setFontSize(10);
-    doc.text(order.customer.name, 20, 70);
-    doc.text(order.customer.email, 20, 77);
-    doc.text(order.customer.phone, 20, 84);
-    doc.text(order.customer.address, 20, 91);
-    
-    // Order Details
-    doc.setFontSize(12);
-    doc.text('Order Details:', 20, 110);
-    doc.text(`Date: ${new Date().toLocaleDateString()}`, 20, 120);
-    doc.text(`Payment Method: ${order.paymentMethod}`, 20, 127);
-    doc.text(`Status: ${order.status}`, 20, 134);
-    
-    // Items Table
-    doc.setFontSize(12);
-    doc.text('Items', 20, 150);
-    doc.text('Quantity', 120, 150);
-    doc.text('Price', 160, 150);
-    doc.text('Total', 190, 150);
-    
-    let yPos = 160;
-    order.items.forEach((item, index) => {
-      if (yPos > 270) {
-        doc.addPage();
-        yPos = 20;
-      }
-      doc.setFontSize(10);
-      doc.text(item.productName, 20, yPos);
-      doc.text(item.quantity.toString(), 120, yPos);
-      doc.text(`LKR ${item.unitPrice}`, 160, yPos);
-      doc.text(`LKR ${item.quantity * item.unitPrice}`, 190, yPos);
-      yPos += 10;
+
+    const pendingPaid = order.pendingPaid ?? false;
+    const pendingAmount = order.pendingPayments || 0;
+    const subtotal = order.items.reduce((sum, item) => sum + (item.quantity * item.unitPrice), 0);
+
+    // Create HTML invoice element
+    const invoiceHTML = `
+      <div style="padding: 20px; font-family: 'Times New Roman', serif; color: #000;">
+        <h1 style="text-align: center; margin-bottom: 10px;">AURA Ayurvedic Products</h1>
+        <div style="text-align: center; font-size: 12px; margin-bottom: 20px;">
+          No.376, Dadigamuwa, Sri Lanka<br/>
+          Tel: 011 342 6186 / 0714788327<br/>
+          Email: Auraayurvedaproducts2014@gmail.com<br/>
+          Reg No: 06/02/01/01/137
+        </div>
+        
+        <div style="display: flex; justify-content: space-between; margin-bottom: 20px;">
+          <h2 style="margin: 0;">INVOICE</h2>
+          <h3 style="margin: 0;">#AUR${order._id.slice(-6).toUpperCase()}</h3>
+        </div>
+        
+        <h3 style="margin: 10px 0 5px 0;">CUSTOMER INFORMATION</h3>
+        <div style="border: 1px solid #ccc; padding: 10px; background-color: #f0f0f0; margin-bottom: 20px;">
+          <strong>${order.customer.name}</strong><br/>
+          Email: ${order.customer.email}<br/>
+          Phone: ${order.customer.phone}<br/>
+          Address: ${order.customer.address}
+        </div>
+        
+        <h3 style="margin: 10px 0 5px 0;">ORDER ITEMS</h3>
+        <table style="width: 100%; border-collapse: collapse; margin-bottom: 20px;">
+          <thead>
+            <tr style="background-color: #165740; color: white;">
+              <th style="border: 1px solid #165740; padding: 8px; text-align: left;">#</th>
+              <th style="border: 1px solid #165740; padding: 8px; text-align: left;">DESCRIPTION</th>
+              <th style="border: 1px solid #165740; padding: 8px; text-align: center;">QTY</th>
+              <th style="border: 1px solid #165740; padding: 8px; text-align: right;">PRICE</th>
+              <th style="border: 1px solid #165740; padding: 8px; text-align: right;">TOTAL</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${order.items.map((item, index) => `
+              <tr>
+                <td style="border: 1px solid #ddd; padding: 8px;">${index + 1}</td>
+                <td style="border: 1px solid #ddd; padding: 8px;">${item.productName}</td>
+                <td style="border: 1px solid #ddd; padding: 8px; text-align: center;">${item.quantity}</td>
+                <td style="border: 1px solid #ddd; padding: 8px; text-align: right;">LKR ${item.unitPrice.toLocaleString()}</td>
+                <td style="border: 1px solid #ddd; padding: 8px; text-align: right;">LKR ${(item.quantity * item.unitPrice).toLocaleString()}</td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+        
+        <div style="margin-bottom: 20px; text-align: right;">
+          <div style="margin-bottom: 5px; font-size: 14px;"><strong>Subtotal:</strong> <strong>LKR ${subtotal.toLocaleString()}</strong></div>
+          ${pendingAmount > 0 ? `
+            <div style="margin-bottom: 5px; font-size: 14px;">
+              <strong>Pending Payment:</strong> 
+              <strong style="color: ${pendingPaid ? 'green' : 'red'};">LKR ${pendingAmount.toLocaleString()} ${pendingPaid ? '(PAID)' : '(NOT PAID)'}</strong>
+            </div>
+          ` : ''}
+          <div style="margin-bottom: 10px; padding-top: 10px; border-top: 2px solid #165740; font-size: 16px; color: #165740;">
+            <strong>TOTAL: LKR ${(pendingPaid ? (subtotal + pendingAmount) : subtotal).toLocaleString()}</strong>
+          </div>
+          ${pendingAmount > 0 && !pendingPaid ? `<div style="font-size: 12px; color: red;"><strong>Due Amount: LKR ${pendingAmount.toLocaleString()}</strong></div>` : ''}
+        </div>
+        
+        <div style="text-align: center; font-size: 11px; color: #666; border-top: 1px solid #ccc; padding-top: 10px;">
+          Thank you for your business!
+        </div>
+      </div>
+    `;
+
+    // Create a temporary container
+    const tempDiv = document.createElement('div');
+    tempDiv.innerHTML = invoiceHTML;
+    tempDiv.style.position = 'absolute';
+    tempDiv.style.left = '-9999px';
+    tempDiv.style.top = '-9999px';
+    tempDiv.style.width = '210mm'; // A4 width
+    tempDiv.style.height = 'auto';
+    document.body.appendChild(tempDiv);
+
+    // Convert HTML to canvas
+    const canvas = await html2canvas(tempDiv, {
+      scale: 2,
+      useCORS: true,
+      logging: false,
+      backgroundColor: '#ffffff'
     });
+
+    // Create PDF from canvas
+    const imgData = canvas.toDataURL('image/png');
+    const pdf = new jsPDF({
+      orientation: 'portrait',
+      unit: 'mm',
+      format: 'a4'
+    });
+
+    const pdfWidth = pdf.internal.pageSize.getWidth();
+    const pdfHeight = pdf.internal.pageSize.getHeight();
+    const imgWidth = pdfWidth - 10; // 5mm margins
+    const imgHeight = (canvas.height * imgWidth) / canvas.width;
+
+    pdf.addImage(imgData, 'PNG', 5, 5, imgWidth, imgHeight);
+
+    // Clean up
+    document.body.removeChild(tempDiv);
+
+    // Return a mock PDF object with download method
+    return {
+      download: (filename: string) => {
+        pdf.save(filename);
+      }
+    };
+  } catch (error) {
+    console.error('Error generating invoice:', error);
+    setError('Failed to generate invoice');
+    return null;
+  }
+};
+
+  const generateInvoice = async (order: Order) => {
+  // Force re-initialization to ensure fonts are loaded
+  if (!pdfMakeInitialized) {
+    await initializePDFMake();
+  }
+
+  if (!order.customer) {
+    setError(`Cannot generate invoice for order ${order._id}: No customer data`);
+    return;
+  }
+
+  console.log('🚀 [PDF Gen] Generating invoice using jsPDF+html2canvas');
+
+  try {
+    const pdfDoc = await generateInvoiceWithPDFMake(order);
     
-    // Totals
-    yPos += 10;
-    doc.setFontSize(12);
-    doc.text('Subtotal:', 160, yPos);
-    doc.text(`LKR ${order.totalAmount}`, 190, yPos);
-    yPos += 10;
-    doc.text('Pending Payments:', 160, yPos);
-    doc.text(`LKR ${order.pendingPayments}`, 190, yPos);
-    yPos += 10;
-    doc.setFontSize(14);
-    doc.setFillColor(100, 204, 197); // #64CCC5
-    doc.rect(150, yPos, 50, 15, 'F');
-    doc.setTextColor(255, 255, 255);
-    doc.text('Grand Total:', 160, yPos + 10);
-    doc.text(`LKR ${order.totalAmount + order.pendingPayments}`, 190, yPos + 10);
-    
-    return doc.output('blob');
-  };
+    if (!pdfDoc) {
+      setError('Failed to create PDF document');
+      return;
+    }
+
+    console.log('✅ [PDF Gen] PDF document created, starting download...');
+    pdfDoc.download(`invoice_${order._id}.pdf`);
+    showSuccessMessage('Invoice Generated', `Invoice for order ${order._id} has been generated successfully!`);
+  } catch (error) {
+    console.error('❌ [PDF Gen] Error generating PDF:', error);
+    setError('Failed to generate invoice. Please try again.');
+  }
+};
+
+
+// Add this inside your component, before the return statement
 
   const sendInvoiceViaWhatsApp = async (order: Order) => {
     if (!order.customer) {
@@ -836,55 +933,42 @@ const Orders = ({ socket }: { socket: Socket }) => {
       return;
     }
 
-    showConfirmationModal(
-      'Send WhatsApp Invoice',
-      `Send invoice for order ${order._id} to ${order.customer.name} via WhatsApp?`,
-      'info',
-      async () => {
-        try {
-          const pdfBlob = generateInvoicePDF(order);
-          if (!pdfBlob) return;
-          const formData = new FormData();
-          formData.append('file', pdfBlob, `invoice_${order._id}.pdf`);
-          const uploadResponse = await api.post('/api/upload', formData, {
-            headers: { 'Content-Type': 'multipart/form-data' },
-          });
-          const mediaUrl = uploadResponse.data.url;
-
-          const response = await axios.post(
-            `https://api.twilio.com/2010-04-01/Accounts/${import.meta.env.VITE_TWILIO_ACCOUNT_SID}/Messages.json`,
-            new URLSearchParams({
-              To: `whatsapp:${order.customer?.phone ?? ''}`,
-              From: `whatsapp:${import.meta.env.VITE_TWILIO_WHATSAPP_NUMBER}`,
-              Body: `Invoice for Order ${order._id}`,
-              MediaUrl: mediaUrl,
-            }),
-            {
-              auth: {
-                username: import.meta.env.VITE_TWILIO_ACCOUNT_SID,
-                password: import.meta.env.VITE_TWILIO_AUTH_TOKEN,
-              },
-            }
-          );
-
-          showSuccessMessage('WhatsApp Sent', `Invoice for Order ${order._id} sent to ${order.customer.name} via WhatsApp!`);
-        } catch (err: any) {
-          setError('Failed to send WhatsApp invoice: ' + (err.response?.data?.error || err.message));
-        }
+    // For now, just download the invoice
+    // Full WhatsApp integration can be added later
+    try {
+      const pdfDoc = await generateInvoiceWithPDFMake(order);
+      if (pdfDoc) {
+        pdfDoc.download(`invoice_${order._id}.pdf`);
+        showSuccessMessage('Invoice Generated', `Invoice for order ${order._id} has been generated successfully!`);
       }
-    );
+    } catch (err: any) {
+      setError('Failed to generate invoice: ' + (err.message || 'Unknown error'));
+    }
   };
 
-  const generateInvoice = (order: Order) => {
-    const doc = generateInvoicePDF(order);
-    if (!doc) return;
-    const url = URL.createObjectURL(doc);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `invoice_${order._id}.pdf`;
-    a.click();
-    URL.revokeObjectURL(url);
-    showSuccessMessage('Invoice Generated', `Invoice for order ${order._id} has been generated successfully!`);
+  const testOrderData = async (orderId: string) => {
+    try {
+      const response = await api.get(`/api/orders/${orderId}`);
+      const order = response.data;
+      console.log('🧪 BACKEND ORDER DATA TEST:', {
+        orderId: order._id,
+        totalAmount: order.totalAmount,
+        pendingPaid: order.pendingPaid,
+        pendingPayments: order.pendingPayments,
+        items: order.items.map((item: any) => ({
+          name: item.productName,
+          quantity: item.quantity,
+          price: item.unitPrice,
+          total: item.quantity * item.unitPrice
+        })),
+        itemsTotal: order.items.reduce((sum: number, item: any) => sum + (item.quantity * item.unitPrice), 0),
+        calculatedTotal: order.pendingPaid 
+          ? order.items.reduce((sum: number, item: any) => sum + (item.quantity * item.unitPrice), 0) + (order.pendingPayments || 0)
+          : order.items.reduce((sum: number, item: any) => sum + (item.quantity * item.unitPrice), 0)
+      });
+    } catch (error) {
+      console.error('Failed to test order data:', error);
+    }
   };
 
   const generateCustomerInvoices = async (customerId: string) => {
@@ -903,17 +987,14 @@ const Orders = ({ socket }: { socket: Socket }) => {
             setError('No orders found for this customer.');
             return;
           }
-          customerOrders.forEach((order: Order) => {
-            if (!order.customer) return;
-            const doc = generateInvoicePDF(order);
-            if (!doc) return;
-            const url = URL.createObjectURL(doc);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = `invoice_${order._id}.pdf`;
-            a.click();
-            URL.revokeObjectURL(url);
-          });
+          
+          for (const order of customerOrders) {
+            if (!order.customer) continue;
+            const pdfDoc = await generateInvoiceWithPDFMake(order);
+            if (!pdfDoc) continue;
+            pdfDoc.download(`invoice_${order._id}.pdf`);
+          }
+          
           showSuccessMessage('Invoices Generated', `${customerOrders.length} invoices generated for ${customer.name}!`);
         } catch (err: any) {
           setError('Failed to generate invoices: ' + (err.response?.data?.error || err.message));
@@ -954,7 +1035,6 @@ const Orders = ({ socket }: { socket: Socket }) => {
     );
   };
 
-  // UPDATED: Order submission with productId validation and stock checking
   const handleOrderSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
@@ -963,7 +1043,6 @@ const Orders = ({ socket }: { socket: Socket }) => {
       return;
     }
 
-    // Validate that all items have productId
     const itemsWithMissingProductId = orderFormData.items.filter(item => !item.productId);
     if (itemsWithMissingProductId.length > 0) {
       setError('Please select valid products from the list for all items. Product selection is required for stock management.');
@@ -978,7 +1057,6 @@ const Orders = ({ socket }: { socket: Socket }) => {
     // Check stock availability before submitting
     try {
       for (const item of orderFormData.items) {
-        // Find the variant in the flattened products list (check both by productId and productName)
         const variant = productsFlat.find(v => v.productId === item.productId && v.displayName === item.productName);
         if (variant) {
           const currentStock = variant.stock || 0;
@@ -996,24 +1074,40 @@ const Orders = ({ socket }: { socket: Socket }) => {
 
     showConfirmationModal(
       'Create Order',
-      `Create order for ${orderFormData.customerName} with ${orderFormData.items.length} items totaling LKR ${currentTotal.toFixed(2)}?`,
+      `Create order for ${orderFormData.customerName} with ${orderFormData.items.length} items totaling LKR ${currentTotal.toLocaleString()}?${
+        orderFormData.pendingPaid && orderFormData.customerPendingPayments > 0 
+          ? `\n\nPending payment of LKR ${orderFormData.customerPendingPayments.toLocaleString()} will be collected.`
+          : ''
+      }`,
       'info',
       async () => {
         try {
-          // UPDATED: Include productId and variant size in the items for stock checking
           const items = orderFormData.items.map((item) => ({
-            productId: item.productId, // This is now required
+            productId: item.productId,
             productName: item.productName,
             quantity: Number(item.quantity),
             unitPrice: Number(item.unitPrice),
-            unit: item.unit || '', // Send variant size for backend stock lookup
+            unit: item.unit || '',
           }));
+
+          console.log('📤 Sending to backend:', {
+            pendingPaid: orderFormData.pendingPaid,
+            customerPendingPayments: orderFormData.customerPendingPayments,
+            itemsCount: items.length
+          });
           
           const response = await api.post('/api/orders', {
             customerId: orderFormData.customerId,
             items,
             personalized: orderFormData.personalized,
             paymentMethod: orderFormData.paymentMethod,
+            pendingPaid: orderFormData.pendingPaid,
+          });
+          
+          console.log('🔄 ORDER CREATION RESPONSE:', {
+            pendingPaid: response.data.pendingPaid,
+            totalAmount: response.data.totalAmount,
+            orderId: response.data._id
           });
           
           setOrderFormData({
@@ -1026,10 +1120,12 @@ const Orders = ({ socket }: { socket: Socket }) => {
             items: [{ productId: '', productName: '', quantity: '', unitPrice: '', unit: '' }],
             paymentMethod: 'Cash',
             personalized: false,
+            pendingPaid: false,
           });
           setLastCreatedOrder(response.data);
           fetchOrders();
-          fetchProducts(); // Refresh products to get updated stock
+          fetchCustomers();
+          fetchProducts();
           setError(null);
           showSuccessMessage('Order Created', `Order ${response.data._id} has been created successfully!`);
           handleTabChange('orders');
@@ -1045,7 +1141,7 @@ const Orders = ({ socket }: { socket: Socket }) => {
     (sum, item) => sum + Number(item.quantity) * Number(item.unitPrice),
     0
   );
-  const grandTotal = currentTotal + orderFormData.customerPendingPayments;
+  const grandTotal = currentTotal + (orderFormData.pendingPaid ? orderFormData.customerPendingPayments : 0);
 
   // Enhanced order statistics
   const regularOrders = orders.filter((order) => !order.personalized);
@@ -1117,7 +1213,7 @@ const Orders = ({ socket }: { socket: Socket }) => {
     }
   };
 
-  // NEW: Function to get stock status for a product
+  // Function to get stock status for a product
   const getStockStatus = (product: Product) => {
     if (product.quantity === undefined || product.quantity === null) {
       return { text: 'No Stock', color: 'text-red-500', bg: 'bg-red-50' };
@@ -1633,6 +1729,7 @@ const Orders = ({ socket }: { socket: Socket }) => {
                                 customerPhone: '',
                                 customerAddress: '',
                                 customerPendingPayments: 0,
+                                pendingPaid: false,
                               });
                             }}
                             className="p-1 hover:bg-blue-100 rounded"
@@ -1676,6 +1773,22 @@ const Orders = ({ socket }: { socket: Socket }) => {
                           Personalized Product
                         </label>
                       </div>
+
+                      {/* Pending Payment Collection Checkbox */}
+                      {orderFormData.customerPendingPayments > 0 && (
+                        <div className="flex items-center space-x-3 p-3 bg-orange-50 rounded-lg border border-orange-200">
+                          <input
+                            type="checkbox"
+                            checked={orderFormData.pendingPaid}
+                            onChange={(e) => setOrderFormData({ ...orderFormData, pendingPaid: e.target.checked })}
+                            className="w-5 h-5 rounded focus:ring-2 focus:ring-orange-500 text-orange-600"
+                            id="pendingPaidMobile"
+                          />
+                          <label htmlFor="pendingPaidMobile" className="text-sm font-medium text-orange-800">
+                            Collect pending payment (LKR {orderFormData.customerPendingPayments.toLocaleString()})
+                          </label>
+                        </div>
+                      )}
 
                       <button
                         onClick={() => setShowScanner(true)}
@@ -1793,12 +1906,26 @@ const Orders = ({ socket }: { socket: Socket }) => {
                         <span className="text-gray-600">Items Total:</span>
                         <span className="font-semibold">LKR {currentTotal.toLocaleString()}</span>
                       </div>
-                      <div className="flex justify-between">
-                        <span className="text-gray-600">Pending Balance:</span>
-                        <span className="font-semibold text-orange-600">
-                          LKR {orderFormData.customerPendingPayments.toLocaleString()}
-                        </span>
-                      </div>
+                      
+                      {orderFormData.customerPendingPayments > 0 && (
+                        <>
+                          <div className="flex justify-between">
+                            <span className="text-gray-600">Pending Balance:</span>
+                            <span className="font-semibold text-orange-600">
+                              LKR {orderFormData.customerPendingPayments.toLocaleString()}
+                            </span>
+                          </div>
+                          {orderFormData.pendingPaid && (
+                            <div className="flex justify-between bg-green-50 p-2 rounded-lg border border-green-200">
+                              <span className="text-green-700 text-sm">Pending payment collected</span>
+                              <span className="font-semibold text-green-700 text-sm">
+                                + LKR {orderFormData.customerPendingPayments.toLocaleString()}
+                              </span>
+                            </div>
+                          )}
+                        </>
+                      )}
+                      
                       <div className="flex justify-between text-lg font-bold pt-3 border-t border-gray-200">
                         <span>Grand Total:</span>
                         <span style={{ color: colors.primary }}>
@@ -1913,7 +2040,7 @@ const Orders = ({ socket }: { socket: Socket }) => {
                               </div>
                               <div className="flex justify-between items-center p-3 bg-white rounded-lg border border-gray-200 transition-all duration-300 hover:shadow-md">
                                 <span className="font-medium text-gray-600">Pending Balance:</span>
-                                <span className="font-semibold text-orange-600">LKR {orderFormData.customerPendingPayments}</span>
+                                <span className="font-semibold text-orange-600">LKR {orderFormData.customerPendingPayments.toLocaleString()}</span>
                               </div>
                             </div>
                           </div>
@@ -1954,17 +2081,33 @@ const Orders = ({ socket }: { socket: Socket }) => {
                             </label>
                           </div>
 
-                          <div>
-                            <button
-                              type="button"
-                              onClick={() => setShowScanner(true)}
-                              className="flex items-center space-x-3 w-full text-white px-6 py-4 rounded-xl transition-all duration-300 shadow-lg hover:shadow-xl justify-center transform hover:scale-105"
-                              style={{ backgroundColor: colors.accent }}
-                            >
-                              <Scan className="h-5 w-5" />
-                              <span className="font-semibold">Scan Product</span>
-                            </button>
-                          </div>
+                          {/* Pending Payment Collection Checkbox */}
+                          {orderFormData.customerPendingPayments > 0 && (
+                            <div className="flex items-center space-x-3 p-4 bg-orange-50 rounded-xl border border-orange-200 transition-all duration-300 hover:shadow-md">
+                              <input
+                                type="checkbox"
+                                checked={orderFormData.pendingPaid}
+                                onChange={(e) => setOrderFormData({ ...orderFormData, pendingPaid: e.target.checked })}
+                                className="w-5 h-5 rounded focus:ring-2 focus:ring-orange-500 text-orange-600 transition-all duration-300"
+                                id="pendingPaidDesktop"
+                              />
+                              <label htmlFor="pendingPaidDesktop" className="text-sm font-semibold text-orange-800">
+                                Collect pending payment of LKR {orderFormData.customerPendingPayments.toLocaleString()}
+                              </label>
+                            </div>
+                          )}
+                        </div>
+
+                        <div className="flex justify-center">
+                          <button
+                            type="button"
+                            onClick={() => setShowScanner(true)}
+                            className="flex items-center space-x-3 text-white px-8 py-4 rounded-xl transition-all duration-300 shadow-lg hover:shadow-xl justify-center transform hover:scale-105"
+                            style={{ backgroundColor: colors.accent }}
+                          >
+                            <Scan className="h-5 w-5" />
+                            <span className="font-semibold">Scan Product</span>
+                          </button>
                         </div>
 
                         {/* Order Items Section */}
@@ -2023,7 +2166,6 @@ const Orders = ({ socket }: { socket: Socket }) => {
                                   {showProductSuggestions[index] && productSuggestions[index] && productSuggestions[index].length > 0 && (
                                     <div className="absolute z-20 w-full mt-1 bg-white border border-gray-200 rounded-xl shadow-2xl max-h-60 overflow-y-auto animate-scale-in">
                                       {productSuggestions[index].map((product: any) => {
-                                        // support both full product objects and flattened variant objects
                                         const isVariant = !!(product && product.rawProduct);
                                         const displayName = isVariant ? product.displayName : (product.name || product.productType || 'Product');
                                         const pid = isVariant ? product.productId : (product._id || product.productId);
@@ -2735,7 +2877,7 @@ const Orders = ({ socket }: { socket: Socket }) => {
                                       disabled={!order.customer}
                                       className="flex items-center space-x-2 text-white px-4 py-2 rounded-lg hover:bg-blue-600 disabled:bg-gray-300 disabled:cursor-not-allowed transition-all duration-300 text-sm transform hover:scale-105"
                                       style={{ backgroundColor: colors.secondary }}
-                                    >
+                                      >
                                       <Send className="h-3 w-3" />
                                       <span>WhatsApp</span>
                                     </button>
@@ -3073,6 +3215,7 @@ const Orders = ({ socket }: { socket: Socket }) => {
           </div>
         )}
 
+
         {/* PIN Modal for Order Deletion */}
         {showPinModal && (
           <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4 animate-fade-in">
@@ -3129,7 +3272,6 @@ const Orders = ({ socket }: { socket: Socket }) => {
           </div>
         )}
       </div>
-
       <style>{`
         @keyframes fade-in {
           from { opacity: 0; transform: translateY(-10px); }
