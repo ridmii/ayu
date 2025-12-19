@@ -11,8 +11,8 @@ import productsRouter from './routes/products';
 import packersRoutes from './routes/packers'; // New
 import packingRoutes from './routes/packing'; // Updated
 import dotenv from 'dotenv';
-import path from 'path';
-dotenv.config({ path: path.resolve(__dirname, '../.env') });
+// Let dotenv load from process working dir or docker env_file; avoid hardcoding path
+dotenv.config();
 
 const app = express();
 const server = http.createServer(app);
@@ -48,8 +48,9 @@ mongoose
   .then(() => console.log('Connected to MongoDB Atlas'))
   .catch((error: any) => console.error('MongoDB connection error:', error.message));
 
-server.listen(5000, () => {
-  console.log('Server running on port 5000');
+const PORT = Number(process.env.PORT) || 5000;
+server.listen(PORT, () => {
+  console.log(`Server running on port ${PORT}`);
   console.log('Process PID:', process.pid, 'Startup time:', new Date().toISOString());
 });
 

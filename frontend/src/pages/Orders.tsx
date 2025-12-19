@@ -776,71 +776,314 @@ const generateInvoiceWithPDFMake = async (order: Order) => {
     const pendingPaid = order.pendingPaid ?? false;
     const pendingAmount = order.pendingPayments || 0;
     const subtotal = order.items.reduce((sum, item) => sum + (item.quantity * item.unitPrice), 0);
+    const grandTotal = pendingPaid ? subtotal + pendingAmount : subtotal;
 
-    // Create HTML invoice element
+    // Modern invoice HTML design with green color scheme
     const invoiceHTML = `
-      <div style="padding: 20px; font-family: 'Times New Roman', serif; color: #000;">
-        <h1 style="text-align: center; margin-bottom: 10px;">AURA Ayurvedic Products</h1>
-        <div style="text-align: center; font-size: 12px; margin-bottom: 20px;">
-          No.376, Dadigamuwa, Sri Lanka<br/>
-          Tel: 011 342 6186 / 0714788327<br/>
-          Email: Auraayurvedaproducts2014@gmail.com<br/>
-          Reg No: 06/02/01/01/137
-        </div>
-        
-        <div style="display: flex; justify-content: space-between; margin-bottom: 20px;">
-          <h2 style="margin: 0;">INVOICE</h2>
-          <h3 style="margin: 0;">#AUR${order._id.slice(-6).toUpperCase()}</h3>
-        </div>
-        
-        <h3 style="margin: 10px 0 5px 0;">CUSTOMER INFORMATION</h3>
-        <div style="border: 1px solid #ccc; padding: 10px; background-color: #f0f0f0; margin-bottom: 20px;">
-          <strong>${order.customer.name}</strong><br/>
-          Email: ${order.customer.email}<br/>
-          Phone: ${order.customer.phone}<br/>
-          Address: ${order.customer.address}
-        </div>
-        
-        <h3 style="margin: 10px 0 5px 0;">ORDER ITEMS</h3>
-        <table style="width: 100%; border-collapse: collapse; margin-bottom: 20px;">
-          <thead>
-            <tr style="background-color: #165740; color: white;">
-              <th style="border: 1px solid #165740; padding: 8px; text-align: left;">#</th>
-              <th style="border: 1px solid #165740; padding: 8px; text-align: left;">DESCRIPTION</th>
-              <th style="border: 1px solid #165740; padding: 8px; text-align: center;">QTY</th>
-              <th style="border: 1px solid #165740; padding: 8px; text-align: right;">PRICE</th>
-              <th style="border: 1px solid #165740; padding: 8px; text-align: right;">TOTAL</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${order.items.map((item, index) => `
-              <tr>
-                <td style="border: 1px solid #ddd; padding: 8px;">${index + 1}</td>
-                <td style="border: 1px solid #ddd; padding: 8px;">${item.productName}</td>
-                <td style="border: 1px solid #ddd; padding: 8px; text-align: center;">${item.quantity}</td>
-                <td style="border: 1px solid #ddd; padding: 8px; text-align: right;">LKR ${item.unitPrice.toLocaleString()}</td>
-                <td style="border: 1px solid #ddd; padding: 8px; text-align: right;">LKR ${(item.quantity * item.unitPrice).toLocaleString()}</td>
-              </tr>
-            `).join('')}
-          </tbody>
-        </table>
-        
-        <div style="margin-bottom: 20px; text-align: right;">
-          <div style="margin-bottom: 5px; font-size: 14px;"><strong>Subtotal:</strong> <strong>LKR ${subtotal.toLocaleString()}</strong></div>
-          ${pendingAmount > 0 ? `
-            <div style="margin-bottom: 5px; font-size: 14px;">
-              <strong>Pending Payment:</strong> 
-              <strong style="color: ${pendingPaid ? 'green' : 'red'};">LKR ${pendingAmount.toLocaleString()} ${pendingPaid ? '(PAID)' : '(NOT PAID)'}</strong>
-            </div>
-          ` : ''}
-          <div style="margin-bottom: 10px; padding-top: 10px; border-top: 2px solid #165740; font-size: 16px; color: #165740;">
-            <strong>TOTAL: LKR ${(pendingPaid ? (subtotal + pendingAmount) : subtotal).toLocaleString()}</strong>
+      <div style="
+        padding: 30px;
+        font-family: 'Inter', 'Segoe UI', 'Roboto', 'Helvetica Neue', Arial, sans-serif;
+        color: #1a1a1a;
+        background: #ffffff;
+        min-height: 100vh;
+        display: flex;
+        flex-direction: column;
+      ">
+        <!-- Header Section with Logo -->
+        <div style="
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          margin-bottom: 30px;
+          padding-bottom: 20px;
+          border-bottom: 2px solid #2e8b57;
+        ">
+          <!-- Logo Section -->
+          <div style="flex: 1;">
+            <img src="/auraa.png" style="width: 80px; height: 80px; border-radius: 12px; object-fit: contain;" alt="Aura Ayurvedic Logo" />
           </div>
-          ${pendingAmount > 0 && !pendingPaid ? `<div style="font-size: 12px; color: red;"><strong>Due Amount: LKR ${pendingAmount.toLocaleString()}</strong></div>` : ''}
+          
+          <!-- Company Details - Center -->
+          <div style="flex: 2; text-align: center;">
+            <h1 style="
+              font-size: 22px;
+              font-weight: 700;
+              color: #2e8b57;
+              margin: 0 0 8px 0;
+              letter-spacing: -0.5px;
+              line-height: 1.2;
+            ">Aura Ayurvedic Products (Pvt) Ltd</h1>
+            <p style="
+              color: #666;
+              margin: 0;
+              font-size: 14px;
+            ">No.376, Dadigamuwa, Sri Lanka</p>
+            <p style="
+              color: #888;
+              margin: 8px 0 0 0;
+              font-size: 12px;
+              font-weight: 500;
+            ">Reg No: 06/02/01/01/137</p>
+          </div>
+          
+          <!-- Invoice Number - Right -->
+          <div style="flex: 1; text-align: right;">
+            <div style="
+              background: linear-gradient(135deg, #2e8b57, #3cb371);
+              color: white;
+              padding: 12px 16px;
+              border-radius: 8px;
+              display: inline-block;
+              box-shadow: 0 4px 12px rgba(46, 139, 87, 0.3);
+            ">
+              <h2 style="
+                font-size: 16px;
+                font-weight: 600;
+                margin: 0 0 4px 0;
+                color: white;
+              ">INVOICE</h2>
+              <p style="
+                font-size: 13px;
+                margin: 0;
+                opacity: 0.9;
+                font-weight: 500;
+              ">#AUR${order._id.slice(-8).toUpperCase()}</p>
+            </div>
+            <p style="
+              font-size: 13px;
+              color: #666;
+              margin: 8px 0 0 0;
+              font-weight: 500;
+            ">
+              ${new Date(order.createdAt).toLocaleDateString('en-US', {
+                year: 'numeric',
+                month: 'short',
+                day: 'numeric'
+              })}
+            </p>
+          </div>
         </div>
-        
-        <div style="text-align: center; font-size: 11px; color: #666; border-top: 1px solid #ccc; padding-top: 10px;">
-          Thank you for your business!
+
+        <!-- Customer and Invoice Details -->
+        <div style="
+          display: grid;
+          grid-template-columns: 1fr 1fr;
+          gap: 30px;
+          margin-bottom: 30px;
+        ">
+          <!-- Bill To Section -->
+          <div>
+            <h3 style="
+              font-size: 14px;
+              font-weight: 600;
+              color: #2e8b57;
+              text-transform: uppercase;
+              letter-spacing: 0.5px;
+              margin: 0 0 12px 0;
+            ">Bill To</h3>
+            <div style="
+              background: #f8fff8;
+              padding: 20px;
+              border-radius: 8px;
+              border-left: 4px solid #2e8b57;
+            ">
+              <p style="font-weight: 600; margin: 0; color: #1a3c27; font-size: 16px;">${order.customer.name}</p>
+            </div>
+          </div>
+          
+          <!-- Payment Details -->
+          <div>
+            <h3 style="
+              font-size: 14px;
+              font-weight: 600;
+              color: #2e8b57;
+              text-transform: uppercase;
+              letter-spacing: 0.5px;
+              margin: 0 0 12px 0;
+            ">Payment Details</h3>
+            <div style="
+              background: #f8fff8;
+              padding: 20px;
+              border-radius: 8px;
+              border-left: 4px solid #3cb371;
+            ">
+              <p style="margin: 0 0 8px 0; font-size: 14px; color: #475569;">
+                <strong>Method:</strong> ${order.paymentMethod}
+              </p>
+              <p style="margin: 0; font-size: 14px; color: #475569;">
+                <strong>Date:</strong> ${new Date(order.createdAt).toLocaleDateString()}
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Items Table -->
+        <div style="margin-bottom: 30px; flex: 1;">
+          <h3 style="
+            font-size: 16px;
+            font-weight: 600;
+            color: #1a3c27;
+            margin: 0 0 16px 0;
+          ">Order Items</h3>
+          <table style="
+            width: 100%;
+            border-collapse: collapse;
+            background: white;
+            border-radius: 8px;
+            overflow: hidden;
+            box-shadow: 0 2px 8px rgba(46, 139, 87, 0.1);
+          ">
+            <thead>
+              <tr style="background: linear-gradient(135deg, #2e8b57, #3cb371);">
+                <th style="
+                  padding: 16px;
+                  text-align: left;
+                  color: white;
+                  font-weight: 600;
+                  font-size: 12px;
+                  text-transform: uppercase;
+                  letter-spacing: 0.5px;
+                ">Product Description</th>
+                <th style="
+                  padding: 16px;
+                  text-align: center;
+                  color: white;
+                  font-weight: 600;
+                  font-size: 12px;
+                  text-transform: uppercase;
+                  letter-spacing: 0.5px;
+                ">Quantity</th>
+                <th style="
+                  padding: 16px;
+                  text-align: right;
+                  color: white;
+                  font-weight: 600;
+                  font-size: 12px;
+                  text-transform: uppercase;
+                  letter-spacing: 0.5px;
+                ">Unit Price (LKR)</th>
+                <th style="
+                  padding: 16px;
+                  text-align: right;
+                  color: white;
+                  font-weight: 600;
+                  font-size: 12px;
+                  text-transform: uppercase;
+                  letter-spacing: 0.5px;
+                ">Amount (LKR)</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${order.items.map((item, index) => `
+                <tr style="border-bottom: 1px solid #e8f5e8; ${index % 2 === 0 ? 'background: #f8fff8;' : 'background: white;'}">
+                  <td style="padding: 16px;">
+                    <p style="font-size: 14px; color: #1a3c27; margin: 0; font-weight: 500;">${item.productName}</p>
+                  </td>
+                  <td style="padding: 16px; text-align: center; font-size: 14px; color: #1a3c27; font-weight: 500;">${item.quantity}</td>
+                  <td style="padding: 16px; text-align: right; font-size: 14px; color: #1a3c27; font-weight: 500;">${item.unitPrice.toLocaleString()}</td>
+                  <td style="padding: 16px; text-align: right; font-size: 14px; color: #1a3c27; font-weight: 600;">${(item.quantity * item.unitPrice).toLocaleString()}</td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+        </div>
+
+        <!-- Totals Section -->
+        <div style="
+          display: grid;
+          grid-template-columns: 2fr 1fr;
+          gap: 40px;
+          align-items: start;
+          margin-bottom: 40px;
+        ">
+          <!-- Empty space for alignment -->
+          <div></div>
+
+          <!-- Amount Summary - Made bigger -->
+          <div style="
+            background: #f8fff8;
+            padding: 28px;
+            border-radius: 8px;
+            border: 1px solid #e8f5e8;
+            box-shadow: 0 2px 8px rgba(46, 139, 87, 0.1);
+            min-width: 350px;
+          ">
+            <div style="margin-bottom: 20px;">
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px;">
+                <span style="font-size: 15px; color: #666; font-weight: 500;">Subtotal:</span>
+                <span style="font-size: 15px; color: #1a3c27; font-weight: 600; white-space: nowrap;">LKR ${subtotal.toLocaleString()}</span>
+              </div>
+              
+              ${pendingAmount > 0 ? `
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px;">
+                  <span style="font-size: 15px; color: #666; font-weight: 500;">Pending Balance:</span>
+                  <span style="font-size: 15px; color: ${pendingPaid ? '#2e8b57' : '#d32f2f'}; font-weight: 600; white-space: nowrap;">
+                    LKR ${pendingAmount.toLocaleString()} ${pendingPaid ? '(SETTLED)' : ''}
+                  </span>
+                </div>
+              ` : ''}
+            </div>
+            
+            <div style="
+              padding-top: 18px;
+              border-top: 2px solid #2e8b57;
+              margin-bottom: ${pendingAmount > 0 && !pendingPaid ? '18px' : '0'};
+            ">
+              <div style="display: flex; justify-content: space-between; align-items: center;">
+                <span style="font-size: 17px; color: #1a3c27; font-weight: 600;">Total Amount:</span>
+                <span style="font-size: 22px; color: #2e8b57; font-weight: 700; white-space: nowrap;">LKR ${grandTotal.toLocaleString()}</span>
+              </div>
+            </div>
+
+            ${pendingAmount > 0 && !pendingPaid ? `
+              <div style="
+                background: #ffebee;
+                border: 1px solid #ffcdd2;
+                border-radius: 6px;
+                padding: 14px;
+                margin-top: 18px;
+              ">
+                <p style="font-size: 13px; color: #d32f2f; margin: 0; font-weight: 600; text-align: center; white-space: nowrap;">
+                  Outstanding Balance: LKR ${pendingAmount.toLocaleString()}
+                </p>
+              </div>
+            ` : ''}
+          </div>
+        </div>
+
+        <!-- Footer - Fixed at bottom -->
+        <div style="
+          margin-top: auto;
+          padding-top: 20px;
+          border-top: 1px solid #e8f5e8;
+          text-align: center;
+          background: #f8fff8;
+          padding: 20px;
+          border-radius: 8px;
+          margin-top: 20px;
+        ">
+          <div style="
+            display: flex;
+            justify-content: center;
+            gap: 60px;
+            margin-bottom: 12px;
+            flex-wrap: wrap;
+          ">
+            <div style="text-align: center;">
+              <p style="font-size: 13px; color: #2e8b57; margin: 0; font-weight: 600;">Email</p>
+              <p style="font-size: 12px; color: #666; margin: 4px 0 0 0; font-weight: 500;">Auraayurvedaproducts2014@gmail.com</p>
+            </div>
+            <div style="text-align: center;">
+              <p style="font-size: 13px; color: #2e8b57; margin: 0; font-weight: 600;">Contact</p>
+              <p style="font-size: 12px; color: #666; margin: 4px 0 0 0; font-weight: 500;">011 342 6186 | 071 478 8327</p>
+            </div>
+          </div>
+          <p style="
+            font-size: 12px;
+            color: #888;
+            margin: 12px 0 0 0;
+            font-weight: 500;
+          ">Authentic Ayurvedic Products for Natural Wellness</p>
         </div>
       </div>
     `;
@@ -852,7 +1095,8 @@ const generateInvoiceWithPDFMake = async (order: Order) => {
     tempDiv.style.left = '-9999px';
     tempDiv.style.top = '-9999px';
     tempDiv.style.width = '210mm'; // A4 width
-    tempDiv.style.height = 'auto';
+    tempDiv.style.height = '297mm'; // A4 height
+    tempDiv.style.background = '#ffffff';
     document.body.appendChild(tempDiv);
 
     // Convert HTML to canvas
@@ -860,7 +1104,11 @@ const generateInvoiceWithPDFMake = async (order: Order) => {
       scale: 2,
       useCORS: true,
       logging: false,
-      backgroundColor: '#ffffff'
+      backgroundColor: '#ffffff',
+      width: 210 * 3.78, // Convert mm to pixels (1mm = 3.78px at 96 DPI)
+      height: 297 * 3.78, // A4 height in pixels
+      windowWidth: 210 * 3.78,
+      windowHeight: 297 * 3.78
     });
 
     // Create PDF from canvas
@@ -873,10 +1121,11 @@ const generateInvoiceWithPDFMake = async (order: Order) => {
 
     const pdfWidth = pdf.internal.pageSize.getWidth();
     const pdfHeight = pdf.internal.pageSize.getHeight();
-    const imgWidth = pdfWidth - 10; // 5mm margins
+    const imgWidth = pdfWidth - 20; // 10mm margins on each side
     const imgHeight = (canvas.height * imgWidth) / canvas.width;
 
-    pdf.addImage(imgData, 'PNG', 5, 5, imgWidth, imgHeight);
+    // Add the invoice content
+    pdf.addImage(imgData, 'PNG', 10, 10, imgWidth, imgHeight);
 
     // Clean up
     document.body.removeChild(tempDiv);
@@ -891,36 +1140,6 @@ const generateInvoiceWithPDFMake = async (order: Order) => {
     console.error('Error generating invoice:', error);
     setError('Failed to generate invoice');
     return null;
-  }
-};
-
-  const generateInvoice = async (order: Order) => {
-  // Force re-initialization to ensure fonts are loaded
-  if (!pdfMakeInitialized) {
-    await initializePDFMake();
-  }
-
-  if (!order.customer) {
-    setError(`Cannot generate invoice for order ${order._id}: No customer data`);
-    return;
-  }
-
-  console.log('🚀 [PDF Gen] Generating invoice using jsPDF+html2canvas');
-
-  try {
-    const pdfDoc = await generateInvoiceWithPDFMake(order);
-    
-    if (!pdfDoc) {
-      setError('Failed to create PDF document');
-      return;
-    }
-
-    console.log('✅ [PDF Gen] PDF document created, starting download...');
-    pdfDoc.download(`invoice_${order._id}.pdf`);
-    showSuccessMessage('Invoice Generated', `Invoice for order ${order._id} has been generated successfully!`);
-  } catch (error) {
-    console.error('❌ [PDF Gen] Error generating PDF:', error);
-    setError('Failed to generate invoice. Please try again.');
   }
 };
 
@@ -943,6 +1162,20 @@ const generateInvoiceWithPDFMake = async (order: Order) => {
       }
     } catch (err: any) {
       setError('Failed to generate invoice: ' + (err.message || 'Unknown error'));
+    }
+  };
+
+  // Simple wrapper used by UI buttons — keeps naming consistent with previous code
+  const generateInvoice = async (order: Order) => {
+    try {
+      const pdfDoc = await generateInvoiceWithPDFMake(order);
+      if (pdfDoc) {
+        pdfDoc.download(`invoice_${order._id}.pdf`);
+        showSuccessMessage('Invoice Generated', `Invoice for order ${order._id} has been generated successfully!`);
+      }
+    } catch (err: any) {
+      console.error('Failed to generate invoice (wrapper):', err);
+      setError('Failed to generate invoice: ' + (err?.message || 'Unknown error'));
     }
   };
 
